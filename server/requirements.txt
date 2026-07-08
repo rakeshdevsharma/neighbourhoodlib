@@ -1,0 +1,7 @@
+grpcio==1.64.1
+grpcio-tools==1.64.1
+grpcio-reflection==1.64.1
+protobuf==5.27.2
+SQLAlchemy==2.0.31
+psycopg[binary]==3.2.1
+alembic==1.13.2

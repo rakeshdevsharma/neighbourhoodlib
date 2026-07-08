@@ -1,0 +1,235 @@
+syntax = "proto3";
+
+package library.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// =============================================================================
+// Enums — all closed-set fields are typed enums (never free strings), each with
+// a zero *_UNSPECIFIED sentinel and a shared type prefix per the proto style
+// guide. These mirror the PostgreSQL ENUM types 1:1 (minus the sentinel).
+// =============================================================================
+
+enum CopyStatus {
+  COPY_STATUS_UNSPECIFIED = 0;
+  COPY_STATUS_AVAILABLE   = 1;
+  COPY_STATUS_ON_LOAN     = 2;
+  COPY_STATUS_LOST        = 3;
+  COPY_STATUS_DAMAGED     = 4;
+  COPY_STATUS_WITHDRAWN   = 5;
+}
+
+enum CopyCondition {
+  COPY_CONDITION_UNSPECIFIED = 0;
+  COPY_CONDITION_NEW         = 1;
+  COPY_CONDITION_GOOD        = 2;
+  COPY_CONDITION_WORN        = 3;
+}
+
+enum MemberStatus {
+  MEMBER_STATUS_UNSPECIFIED = 0;
+  MEMBER_STATUS_ACTIVE      = 1;
+  MEMBER_STATUS_SUSPENDED   = 2;
+}
+
+enum LoanStatus {
+  LOAN_STATUS_UNSPECIFIED = 0;
+  LOAN_STATUS_OUTSTANDING = 1; // borrowed, not yet returned, not past due
+  LOAN_STATUS_RETURNED    = 2; // returned_at is set
+  LOAN_STATUS_OVERDUE     = 3; // outstanding AND past due_at
+}
+
+// =============================================================================
+// Core resource messages
+// =============================================================================
+
+message Book {
+  int64  id       = 1;
+  string title    = 2;
+  string author   = 3;
+  string isbn     = 4;
+  // Derived (read-only): computed from book_copies.
+  int32  total_copies     = 5;
+  int32  available_copies = 6;
+}
+
+message BookCopy {
+  int64         id             = 1;
+  int64         book_id        = 2;
+  string        barcode        = 3;
+  CopyStatus    status         = 4;
+  CopyCondition condition      = 5;
+  string        shelf_location = 6;
+}
+
+message Member {
+  int64        id     = 1;
+  string       name   = 2;
+  string       email  = 3;
+  string       phone  = 4;
+  MemberStatus status = 5;
+}
+
+message Loan {
+  int64                     id          = 1;
+  int64                     copy_id     = 2;
+  int64                     member_id   = 3;
+  google.protobuf.Timestamp borrowed_at = 4;
+  google.protobuf.Timestamp due_at      = 5;
+  google.protobuf.Timestamp returned_at = 6; // unset while outstanding
+  int32                     fine_cents  = 7;
+
+  // Read-only enrichment, server-populated for convenient display.
+  int64  book_id     = 8;
+  string book_title  = 9;
+  string member_name = 10;
+  string barcode     = 11;
+  LoanStatus status  = 12;
+}
+
+// =============================================================================
+// Book RPCs
+// =============================================================================
+
+message CreateBookRequest {
+  string title  = 1;
+  string author = 2;
+  string isbn   = 3; // optional
+}
+
+message UpdateBookRequest {
+  int64  id     = 1;
+  string title  = 2;
+  string author = 3;
+  string isbn   = 4;
+}
+
+message GetBookRequest { int64 id = 1; }
+
+message ListBooksRequest {
+  int32  page_size  = 1;
+  string page_token = 2;
+  string query      = 3; // optional title/author substring filter
+}
+
+message ListBooksResponse {
+  repeated Book books           = 1;
+  string        next_page_token = 2;
+}
+
+// =============================================================================
+// Copy RPCs
+// =============================================================================
+
+message AddCopyRequest {
+  int64         book_id        = 1;
+  string        barcode        = 2;
+  CopyCondition condition      = 3;
+  string        shelf_location = 4;
+}
+
+message UpdateCopyRequest {
+  int64         id             = 1;
+  CopyStatus    status         = 2; // e.g. mark lost / damaged / withdrawn
+  CopyCondition condition      = 3;
+  string        shelf_location = 4;
+}
+
+message ListCopiesRequest {
+  int64  book_id    = 1; // optional filter
+  int32  page_size  = 2;
+  string page_token = 3;
+}
+
+message ListCopiesResponse {
+  repeated BookCopy copies          = 1;
+  string            next_page_token = 2;
+}
+
+// =============================================================================
+// Member RPCs
+// =============================================================================
+
+message CreateMemberRequest {
+  string name  = 1;
+  string email = 2;
+  string phone = 3; // optional
+}
+
+message UpdateMemberRequest {
+  int64        id     = 1;
+  string       name   = 2;
+  string       email  = 3;
+  string       phone  = 4;
+  MemberStatus status = 5;
+}
+
+message GetMemberRequest { int64 id = 1; }
+
+message ListMembersRequest {
+  int32  page_size  = 1;
+  string page_token = 2;
+  string query      = 3; // optional name/email substring filter
+}
+
+message ListMembersResponse {
+  repeated Member members         = 1;
+  string          next_page_token = 2;
+}
+
+// =============================================================================
+// Lending RPCs
+// =============================================================================
+
+message BorrowBookRequest {
+  int64 member_id = 1;
+  oneof target {
+    int64 book_id = 2; // lend any available copy of this title
+    int64 copy_id = 3; // lend this specific copy (e.g. barcode scan)
+  }
+}
+
+message ReturnBookRequest {
+  int64 loan_id      = 1;
+  bool  mark_damaged = 2; // return the copy as damaged instead of available
+}
+
+message ListLoansRequest {
+  int64      member_id  = 1; // optional filter
+  LoanStatus status     = 2; // optional filter (UNSPECIFIED = all)
+  int32      page_size  = 3;
+  string     page_token = 4;
+}
+
+message ListLoansResponse {
+  repeated Loan loans           = 1;
+  string        next_page_token = 2;
+}
+
+// =============================================================================
+// Service
+// =============================================================================
+
+service LibraryService {
+  // Books (bibliographic records)
+  rpc CreateBook (CreateBookRequest) returns (Book);
+  rpc UpdateBook (UpdateBookRequest) returns (Book);
+  rpc GetBook    (GetBookRequest)    returns (Book);
+  rpc ListBooks  (ListBooksRequest)  returns (ListBooksResponse);
+
+  // Copies (physical items)
+  rpc AddCopy    (AddCopyRequest)    returns (BookCopy);
+  rpc UpdateCopy (UpdateCopyRequest) returns (BookCopy);
+  rpc ListCopies (ListCopiesRequest) returns (ListCopiesResponse);
+
+  // Members
+  rpc CreateMember (CreateMemberRequest) returns (Member);
+  rpc UpdateMember (UpdateMemberRequest) returns (Member);
+  rpc GetMember    (GetMemberRequest)    returns (Member);
+  rpc ListMembers  (ListMembersRequest)  returns (ListMembersResponse);
+
+  // Lending
+  rpc BorrowBook (BorrowBookRequest) returns (Loan);
+  rpc ReturnBook (ReturnBookRequest) returns (Loan);
+  rpc ListLoans  (ListLoansRequest)  returns (ListLoansResponse);
+}
