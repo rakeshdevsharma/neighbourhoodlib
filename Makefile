@@ -29,7 +29,7 @@ proto-py:
 	cd server && bash scripts/gen_proto.sh
 
 proto-web:
-	mkdir -p web/gen && protoc -I proto/library/v1 \
+	mkdir -p web/gen && protoc -I /usr/include -I proto/library/v1 \
 	  --js_out=import_style=commonjs:web/gen \
 	  --grpc-web_out=import_style=typescript,mode=grpcwebtext:web/gen \
 	  proto/library/v1/library.proto

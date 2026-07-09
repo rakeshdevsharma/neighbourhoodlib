@@ -4,7 +4,7 @@ FROM node:20-bookworm AS builder
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends protobuf-compiler curl ca-certificates \
+    && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # grpc-web codegen plugin (arch-aware).
@@ -26,7 +26,9 @@ COPY proto /proto
 COPY web ./
 
 # Generate grpc-web stubs into ./gen (library_pb.js, library_pb.d.ts, LibraryServiceClientPb.ts).
+ENV PATH="/app/node_modules/.bin:${PATH}"
 RUN mkdir -p gen && protoc \
+      -I /usr/include \
       -I /proto/library/v1 \
       --js_out=import_style=commonjs:gen \
       --grpc-web_out=import_style=typescript,mode=grpcwebtext:gen \
