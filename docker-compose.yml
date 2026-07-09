@@ -16,6 +16,7 @@ services:
       retries: 10
 
   server:
+    image: ${IMAGE_REGISTRY:-neighbourhoodlib}-server:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: server/Dockerfile
@@ -42,6 +43,7 @@ services:
       - server
 
   web:
+    image: ${IMAGE_REGISTRY:-neighbourhoodlib}-web:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: web/Dockerfile

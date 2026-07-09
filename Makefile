@@ -1,11 +1,12 @@
-.PHONY: help up down logs build proto-py proto-web seed test psql clean
+.PHONY: help up down logs build push proto-py proto-web seed test psql clean
 
 help:
 	@echo "Targets:"
-	@echo "  up         - build & start all services (db, server, envoy, web)"
+	@echo "  up         - start services (use local images, pull from registry if missing)"
 	@echo "  down       - stop all services"
 	@echo "  logs       - tail logs"
-	@echo "  build      - rebuild images"
+	@echo "  build      - rebuild server and web images (does not start containers)"
+	@echo "  push       - build and push server/web images (set IMAGE_REGISTRY)"
 	@echo "  proto-py   - generate Python gRPC stubs into server/gen (local dev)"
 	@echo "  proto-web  - generate grpc-web stubs into web/gen (local dev)"
 	@echo "  seed       - seed sample data into a running server"
@@ -14,7 +15,11 @@ help:
 	@echo "  clean      - down + remove volumes and generated stubs"
 
 up:
-	docker compose up --build
+	docker compose up --no-build --pull missing
+
+push:
+	docker compose build server web
+	docker compose push server web
 
 down:
 	docker compose down
