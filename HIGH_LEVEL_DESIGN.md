@@ -1,6 +1,6 @@
 # Neighborhood Library Service — High Level Design
 
-**Status:** Draft · **Date:** 2026-07-07 · **Owner:** Rakesh Sharma
+**Status:** Draft · **Date:** 2026-07-10 · **Owner:** Rakesh Sharma
 
 ---
 
@@ -36,6 +36,7 @@ system.
 | DB access | **SQLAlchemy 2.0** (Core/ORM) + **Alembic** migrations | Mature, migration tooling, avoids hand-rolled SQL sprawl. |
 | Frontend | **Next.js (React, TypeScript)** | Required by spec. |
 | Packaging | **Docker Compose** (db + server + proxy + web) | One-command local setup. |
+| Code layout | **Feature modules** + shared `api/`, `persistence/`, `core/` | Clear boundaries; scales without monolithic service/repo files. |
 
 ---
 
@@ -60,8 +61,9 @@ system.
    generated TypeScript stubs.
 2. **Envoy proxy** — translates browser gRPC-Web (HTTP/1.1) to native gRPC (HTTP/2).
    Browsers cannot speak raw gRPC, so this hop is required for the gRPC path.
-3. **Python gRPC server** — implements the `LibraryService`, holds business logic
-   and validation, and is the only component that talks to the database.
+3. **Python gRPC server** — implements the `LibraryService` via a thin gRPC adapter
+   (`api/grpc/`) that delegates to feature services (`books`, `members`, `lending`).
+   It is the only component that talks to the database.
 4. **PostgreSQL** — durable store for all entities.
 
 The server is stateless; all state lives in Postgres, so it can be scaled
@@ -140,8 +142,8 @@ Availability counts are *derived* from `book_copies`, not stored here:
 
 The `copy_status`, `copy_condition`, and `member_status` PostgreSQL `ENUM` types
 mirror the protobuf enums 1:1 (minus the `*_UNSPECIFIED` sentinel, which is an
-API-boundary concept only). Mappers translate between the proto enum integers and
-these DB enum labels.
+API-boundary concept only). `app/api/mappers/` translates between the proto enum
+integers and these DB enum labels.
 
 **`loans`**
 
@@ -347,34 +349,76 @@ message ListLoansResponse { repeated Loan loans = 1; string next_page_token = 2;
 
 ### 6.1 Layering
 
+The Python server is organized into **feature modules** with shared transport and
+persistence packages. Business rules never live in the gRPC or repository layers.
+
 ```
-grpc handlers (library_servicer.py)   ← translate proto ⇄ domain, map errors
+api/grpc/servicer.py          ← thin RPC adapter: proto ⇄ domain, map errors
         │
-services / business logic             ← borrow/return rules, fine calc
+api/mappers/                  ← protobuf translation (proto-free below this line)
         │
-repositories (SQLAlchemy)             ← queries, transactions
+{books, members, lending}/service.py   ← business rules, validation, transactions
         │
-models (ORM) + Alembic migrations
+{books, members, lending}/repository.py ← SQL/ORM queries only
+        │
+persistence/                  ← engine, unit_of_work, ORM models
+        │
+PostgreSQL                    ← Alembic migrations in server/migrations/
 ```
+
+**Dependency rules**
+
+| Layer | May import | Must not import |
+|---|---|---|
+| `api/grpc/` | feature `service`, `api/mappers`, `core` | `repository` directly |
+| `{feature}/service.py` | own `repository`, `persistence`, `core`; cross-feature `repository` for orchestration (e.g. lending → books, members) | `api/`, protobuf |
+| `{feature}/repository.py` | `persistence/models`, `core/enums` | feature `service`, `api/` |
+| `persistence/` | `core` | any feature module |
 
 Keeping business rules out of the gRPC servicer makes the logic unit-testable
 without a running server and reusable if a REST facade is added later.
 
-### 6.2 Transactions & Concurrency
+### 6.2 Code organization
+
+```
+server/app/
+  api/
+    grpc/           server.py, servicer.py, error_handler.py
+    mappers/        books, copies, members, lending, enums
+  books/            service.py, repository.py   (bibliographic + physical copies)
+  members/          service.py, repository.py
+  lending/          service.py, repository.py   (borrow/return orchestration)
+  persistence/
+    engine.py       SQLAlchemy engine + SessionLocal
+    unit_of_work.py transactional session scope
+    models/         Book, BookCopy, Member, Loan
+  core/             config, errors, enums, validation, pagination
+  scripts/          seed.py
+```
+
+Physical copies (`book_copies`) live in the **books** module because they are a
+child entity of a bibliographic record. **Lending** is a separate module because
+borrow/return is a cross-domain workflow that coordinates members, copies, and
+loans.
+
+### 6.3 Transactions & Concurrency
 
 Borrow/return run inside a single DB transaction. Borrow selects an available copy
 with `SELECT ... FOR UPDATE SKIP LOCKED` so concurrent borrows of the same title
 pick *different* copies without blocking; return locks the loan and its copy row.
 The `one_open_loan_per_copy` partial unique index is the last-line safety net at the
 DB level, guaranteeing a copy can never have two open loans even under a race.
+Transaction boundaries are owned by `persistence/unit_of_work.py`; each feature
+`service.py` opens a `unit_of_work()` scope per operation.
 
-### 6.3 Validation
+### 6.4 Validation
 
-- Proto-level: required fields present.
+- Proto-level: required fields present (checked in `api/grpc/servicer.py`).
 - Domain-level: email format, non-negative copies, ISBN checksum (if provided),
-  member status, book availability.
+  member status, book availability (in `core/validation.py`, called from feature
+  services).
 
-### 6.4 REST Alternative
+### 6.5 REST Alternative
 
 If gRPC-Web + Envoy proves too heavy for the timebox, the same service layer can be
 exposed via **FastAPI** with equivalent resource endpoints
@@ -400,7 +444,9 @@ with gRPC web").
 `LOAN_PERIOD_DAYS`, `FINE_CENTS_PER_DAY`.
 
 **Bring-up sequence:** `docker compose up` → Alembic migrations run on server start
-→ optional seed script inserts sample books/members → UI available at `:3000`.
+(`server/migrations/`) → optional `python -m app.scripts.seed` inserts sample
+books/members → gRPC server starts via `python -m app.api.grpc.server` → UI
+available at `:3000`.
 
 ---
 
@@ -422,11 +468,14 @@ with gRPC web").
 
 ## 9. Testing Strategy
 
-- **Unit tests** for the service layer (borrow/return rules, fine calc) against an
-  in-memory or transactional test DB.
-- **Integration tests** driving the gRPC server end-to-end (borrow → list → return).
+- **Service-layer tests** per feature module (`server/tests/{books,members,lending}/`)
+  exercising business rules against a real PostgreSQL database (needed for ENUM
+  types, partial unique indexes, and `SKIP LOCKED`).
+- **Shared fixtures** in `server/tests/helpers.py` and table truncation in
+  `conftest.py` for per-test isolation.
+- **Integration tests** (future) driving the gRPC server end-to-end
+  (borrow → list → return).
 - **Sample client script** (`examples/client.py`) demonstrating each RPC, per the
   spec's optional tip.
 - Key edge cases: borrow when no copies available, double-return, borrow by
   suspended member, overdue fine computation.
-```

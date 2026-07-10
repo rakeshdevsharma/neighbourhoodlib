@@ -25,7 +25,7 @@ from alembic import command  # noqa: E402
 from alembic.config import Config  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 
-from app.db import engine  # noqa: E402
+from app.persistence.engine import engine  # noqa: E402
 
 
 @pytest.fixture(scope="session", autouse=True)

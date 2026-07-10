@@ -11,7 +11,7 @@ OUT_DIR="$SERVER_DIR/gen"
 
 mkdir -p "$OUT_DIR"
 
-python -m grpc_tools.protoc \
+python3 -m grpc_tools.protoc \
   -I "$PROTO_DIR" \
   --python_out="$OUT_DIR" \
   --grpc_python_out="$OUT_DIR" \

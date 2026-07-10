@@ -25,8 +25,8 @@ alembic upgrade head
 
 if [ "${SEED_ON_START:-false}" = "true" ]; then
   echo "Seeding sample data..."
-  python -m app.seed || echo "  seeding skipped/failed (non-fatal)"
+  python -m app.scripts.seed || echo "  seeding skipped/failed (non-fatal)"
 fi
 
 echo "Starting gRPC server..."
-exec python -m app.server
+exec python -m app.api.grpc.server

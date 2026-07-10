@@ -40,7 +40,7 @@ proto-web:
 	  proto/library/v1/library.proto
 
 seed:
-	docker compose exec server python -m app.seed
+	docker compose exec server python -m app.scripts.seed
 
 test:
 	cd server && python -m pytest -v

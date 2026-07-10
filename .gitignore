@@ -27,6 +27,17 @@ go.work.sum
 # env file
 .env
 
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+server/gen/
+
+# Node / Next.js
+web/gen/
+web/.next/
+node_modules/
+
 # Editor/IDE
 # .idea/
 # .vscode/

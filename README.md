@@ -26,6 +26,14 @@ Browser (Next.js) ──gRPC-Web──► Envoy ──gRPC──► Python serve
   items) → `loans`. A partial unique index guarantees a copy can never have two
   open loans. See the design doc for details.
 
+The server is organized by **feature modules** (`books`, `members`, `lending`)
+with shared **transport** (`api/grpc`), **persistence** (`persistence/`), and
+**core** utilities (`core/`). Call flow:
+
+```
+api/grpc/servicer  →  {books,members,lending}/service  →  */repository  →  persistence
+```
+
 ---
 
 ## Quick start (Docker)
@@ -115,8 +123,10 @@ outside containers.
 ### Run the backend tests
 
 Tests run the real service + repository layers against PostgreSQL (needed for
-enum types, the partial unique index, and `SKIP LOCKED`). Create a throwaway
-database and point the tests at it:
+enum types, the partial unique index, and `SKIP LOCKED`). They are split by
+feature module under `server/tests/{books,members,lending}/`.
+
+Create a throwaway database and point the tests at it:
 
 ```bash
 docker compose up -d db
@@ -126,6 +136,14 @@ cd server
 pip install -r requirements-dev.txt
 TEST_DATABASE_URL=postgresql+psycopg://library:library@localhost:5432/library_test \
   python -m pytest -v
+```
+
+Or run inside the server container:
+
+```bash
+docker compose run --rm \
+  -e TEST_DATABASE_URL=postgresql+psycopg://library:library@db:5432/library_test \
+  server sh -c "pip install -q pytest && python -m pytest -v"
 ```
 
 ### Database migrations
@@ -147,23 +165,43 @@ alembic upgrade head
 proto/library/v1/library.proto   # service + message + enum definitions
 server/
   app/
-    server.py         # gRPC entrypoint (+ reflection)
-    servicer.py       # proto <-> domain adapter, error-code mapping
-    services.py       # business logic (borrow/return, fines, transactions)
-    repositories.py   # SQL/ORM queries (incl. SKIP LOCKED copy selection)
-    models.py         # SQLAlchemy ORM (per-copy model)
-    mappers.py        # proto <-> domain translation
-    enums.py          # domain enums (mirror the PG ENUM types)
-    validation.py     # input validation
-    pagination.py     # opaque page-token helpers
-    config.py         # env-driven settings
-    seed.py           # sample data
-  migrations/         # Alembic
-  scripts/            # codegen + entrypoint
-  tests/              # pytest (service + repo layers)
-envoy/envoy.yaml      # gRPC-Web proxy config
-web/                  # Next.js frontend (grpc-web client)
-examples/client.py    # sample gRPC client
+    api/
+      grpc/
+        server.py         # gRPC entrypoint (+ reflection); python -m app.api.grpc.server
+        servicer.py       # thin RPC adapter; delegates to feature services
+        error_handler.py  # domain error → gRPC status mapping
+      mappers/            # proto ↔ domain translation (per entity)
+    books/
+      service.py          # bibliographic records + physical copies
+      repository.py
+    members/
+      service.py
+      repository.py
+    lending/
+      service.py          # borrow/return, fines, loan queries
+      repository.py
+    persistence/
+      engine.py           # SQLAlchemy engine + session factory
+      unit_of_work.py     # transactional session scope
+      models/             # ORM models (book, member, loan)
+    core/
+      config.py           # env-driven settings
+      errors.py           # domain exceptions
+      enums.py            # domain enums (mirror PG ENUM types)
+      validation.py
+      pagination.py
+    scripts/
+      seed.py             # sample data; python -m app.scripts.seed
+  migrations/             # Alembic
+  scripts/                # Docker entrypoint + proto codegen
+  tests/
+    books/                # book + copy service tests
+    members/
+    lending/              # borrow/return service tests
+    helpers.py            # shared test fixtures
+envoy/envoy.yaml          # gRPC-Web proxy config
+web/                      # Next.js frontend (grpc-web client)
+examples/client.py        # sample gRPC client
 docker-compose.yml
 Makefile
 ```
@@ -178,8 +216,9 @@ Makefile
   `LoanStatus`) in both the proto contract and PostgreSQL.
 - **Concurrency-safe borrowing** with `SELECT … FOR UPDATE SKIP LOCKED`, so two
   staff can borrow different copies of the same title without blocking.
-- **Layered server** (servicer → services → repositories) keeping business logic
-  free of any gRPC or DB-transport concerns and unit-testable.
+- **Layered server** organized by feature module
+  (`api/grpc` → `{books,members,lending}/service` → `*/repository` → `persistence`),
+  keeping business logic free of any gRPC or DB-transport concerns and unit-testable.
 - **Validation & typed errors** mapped to gRPC status codes
   (`NOT_FOUND`, `INVALID_ARGUMENT`, `FAILED_PRECONDITION`, `ALREADY_EXISTS`).
 
@@ -197,4 +236,3 @@ See [HIGH_LEVEL_DESIGN.md](HIGH_LEVEL_DESIGN.md) for the full rationale.
   `make proto-web` locally.
 - **Server exits on start**: it waits for Postgres health then runs migrations;
   check `docker compose logs server`.
-```
