@@ -12,6 +12,7 @@ from app.persistence.models import Member
 def add_member(
     session: Session, *, name: str, email: str, phone: Optional[str]
 ) -> Member:
+    """INSERT a new ``members`` row. Status defaults to ACTIVE via the ORM model."""
     member = Member(name=name, email=email, phone=phone)
     session.add(member)
     session.flush()
@@ -19,12 +20,14 @@ def add_member(
 
 
 def get_member(session: Session, member_id: int) -> Optional[Member]:
+    """Primary-key lookup. Returns None if not found (service layer raises NotFound)."""
     return session.get(Member, member_id)
 
 
 def list_members(
     session: Session, *, query: Optional[str], limit: int, offset: int
 ) -> Sequence[Member]:
+    """SELECT members with optional name/email search and offset pagination."""
     stmt = select(Member)
     if query:
         like = f"%{query}%"

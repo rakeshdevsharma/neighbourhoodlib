@@ -18,6 +18,16 @@ from app.persistence.unit_of_work import unit_of_work
 
 
 def create_member(*, name: str, email: str, phone: Optional[str]) -> Member:
+    """Register a new library patron.
+
+  Validates name/email, inserts a row with default status ACTIVE, and returns
+  a detached ORM object. Email uniqueness is enforced by the database; a duplicate
+  triggers ``IntegrityError`` which we convert to ``AlreadyExists``.
+
+  Raises:
+      InvalidArgument: name empty or email malformed.
+      AlreadyExists: email already registered.
+  """
     name = v.require_non_empty(name, "name")
     email = v.require_valid_email(email)
     phone = v.normalize_optional(phone)
@@ -34,6 +44,15 @@ def create_member(*, name: str, email: str, phone: Optional[str]) -> Member:
 def update_member(
     *, member_id: int, name: str, email: str, phone: Optional[str], status: Optional[MemberStatus]
 ) -> Member:
+    """Update a member's profile and optionally change borrowing eligibility.
+
+  Setting ``status`` to SUSPENDED blocks future borrows (checked in lending
+  service) without deleting loan history. Pass ``status=None`` to leave unchanged.
+
+  Raises:
+      NotFound: member does not exist.
+      AlreadyExists: new email belongs to another member.
+  """
     name = v.require_non_empty(name, "name")
     email = v.require_valid_email(email)
     phone = v.normalize_optional(phone)
@@ -53,6 +72,11 @@ def update_member(
 
 
 def get_member(member_id: int) -> Member:
+    """Fetch a single member by primary key.
+
+  Raises:
+      NotFound: no row with that id.
+  """
     with unit_of_work() as s:
         member = repo.get_member(s, member_id)
         if member is None:
@@ -62,6 +86,7 @@ def get_member(member_id: int) -> Member:
 
 
 def list_members(*, query: Optional[str], limit: int, offset: int) -> list[Member]:
+    """Return a paginated list of members, optionally filtered by name/email."""
     with unit_of_work() as s:
         members = list(repo.list_members(s, query=query, limit=limit, offset=offset))
         for m in members:

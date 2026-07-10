@@ -24,12 +24,30 @@ from app.persistence.unit_of_work import unit_of_work
 
 
 def _now() -> datetime:
+    """Return current UTC time (timezone-aware, required for Postgres timestamptz)."""
     return datetime.now(timezone.utc)
 
 
 def borrow_book(
     *, member_id: int, book_id: Optional[int], copy_id: Optional[int]
 ) -> Loan:
+    """Check out a book to a member.
+
+  Flow (all in one transaction):
+    1. Verify member exists and is ACTIVE.
+    2. Lock an available copy — either the specific ``copy_id`` or any copy of
+       ``book_id`` via ``lock_available_copy`` (SKIP LOCKED).
+    3. Set copy.status = ON_LOAN.
+    4. INSERT a loan row with due_at = now + LOAN_PERIOD_DAYS.
+
+  The partial unique index on ``loans(copy_id) WHERE returned_at IS NULL``
+  prevents two open loans on the same copy; a race surfaces as IntegrityError.
+
+  Raises:
+      InvalidArgument: neither book_id nor copy_id provided.
+      NotFound: member, book, or copy missing.
+      FailedPrecondition: member suspended, copy unavailable, or sold out.
+  """
     if not book_id and not copy_id:
         raise InvalidArgument("either book_id or copy_id must be provided")
     with unit_of_work() as s:
@@ -40,14 +58,12 @@ def borrow_book(
             raise FailedPrecondition("member is not active and cannot borrow")
 
         if copy_id:
-            # Lend a specific copy (e.g. barcode scan at the desk).
             copy = books_repo.get_copy_for_update(s, copy_id)
             if copy is None:
                 raise NotFound(f"copy {copy_id} not found")
             if copy.status != CopyStatus.AVAILABLE:
                 raise FailedPrecondition(f"copy {copy_id} is not available")
         else:
-            # Lend any available copy of the requested title.
             copy = books_repo.lock_available_copy(s, book_id)
             if copy is None:
                 if books_repo.get_book(s, book_id) is None:
@@ -63,13 +79,21 @@ def borrow_book(
             )
             s.flush()
         except IntegrityError as e:
-            # Lost race on one_open_loan_per_copy partial unique index.
             raise FailedPrecondition("copy was just borrowed by someone else") from e
         loan = _reload_loan(s, loan.id)
         return loan
 
 
 def return_book(*, loan_id: int, mark_damaged: bool) -> Loan:
+    """Close an open loan and put the copy back on the shelf.
+
+  Sets ``returned_at``, computes late fines, and updates copy status to
+  AVAILABLE (or DAMAGED + condition WORN if ``mark_damaged`` is True).
+
+  Raises:
+      NotFound: loan does not exist.
+      FailedPrecondition: loan already returned.
+  """
     with unit_of_work() as s:
         loan = repo.get_loan_for_update(s, loan_id)
         if loan is None:
@@ -92,6 +116,13 @@ def return_book(*, loan_id: int, mark_damaged: bool) -> Loan:
 def list_loans(
     *, member_id: Optional[int], status_filter: Optional[str], limit: int, offset: int
 ) -> list[Loan]:
+    """Query loans with optional member and status filters.
+
+  ``status_filter`` values (``outstanding``, ``returned``, ``overdue``) are
+  plain strings translated from proto enums upstream. Eager-loaded relationships
+  (copy→book, member) are touched before ``expunge`` so proto mapping works
+  outside the session.
+  """
     with unit_of_work() as s:
         loans = list(
             repo.list_loans(
@@ -103,7 +134,6 @@ def list_loans(
                 offset=offset,
             )
         )
-        # Touch relationships so they are loaded before expunge (for proto mapping).
         for ln in loans:
             _ = ln.copy.book.title, ln.member.name
         for ln in loans:
@@ -112,7 +142,12 @@ def list_loans(
 
 
 def _compute_fine(due_at: datetime, returned_at: datetime) -> int:
-    """Late fines: one billing day per partial day past due, in cents."""
+    """Calculate late fine in cents.
+
+  No fine if returned on or before due date. Otherwise, each started day late
+  costs ``settings.fine_cents_per_day`` (default 25¢). ``math.ceil`` rounds
+  partial days up to a full billing day.
+  """
     if returned_at <= due_at:
         return 0
     days_late = math.ceil((returned_at - due_at).total_seconds() / 86400)
@@ -120,7 +155,12 @@ def _compute_fine(due_at: datetime, returned_at: datetime) -> int:
 
 
 def _reload_loan(s: Session, loan_id: int) -> Loan:
-    """Fetch a loan and load copy/book/member before detaching it for mapping."""
+    """Re-fetch a loan with related copy/book/member loaded, then detach it.
+
+  gRPC mappers need ``loan.copy.book.title`` etc. after the session closes.
+  ``expunge`` removes the object from the session but keeps loaded attributes
+  in memory.
+  """
     loan = repo.get_loan_for_update(s, loan_id)
     _ = loan.copy.book.title, loan.copy.barcode, loan.member.name
     s.expunge(loan)

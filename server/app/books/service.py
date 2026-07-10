@@ -21,6 +21,17 @@ from app.persistence.unit_of_work import unit_of_work
 
 
 def create_book(*, title: str, author: str, isbn: Optional[str]) -> Book:
+    """Register a new catalog title in the database.
+
+    Validates inputs, opens a SQLAlchemy transaction via ``unit_of_work()``,
+    inserts a ``Book`` row, and commits. ``s.expunge(book)`` detaches the ORM
+    object from the session so it can be read after the session closes (needed
+    for gRPC response mapping).
+
+    Raises:
+        InvalidArgument: title/author empty or ISBN malformed.
+        AlreadyExists: another book already has this ISBN.
+    """
     title = v.require_non_empty(title, "title")
     author = v.require_non_empty(author, "author")
     isbn = v.validate_isbn(isbn)
@@ -29,13 +40,22 @@ def create_book(*, title: str, author: str, isbn: Optional[str]) -> Book:
             book = repo.add_book(s, title=title, author=author, isbn=isbn)
             s.flush()
         except IntegrityError as e:
-            # Unique index on isbn (when non-null).
             raise AlreadyExists("a book with this isbn already exists") from e
         s.expunge(book)
         return book
 
 
 def update_book(*, book_id: int, title: str, author: str, isbn: Optional[str]) -> Book:
+    """Change a book's bibliographic fields.
+
+    Loads the existing row, mutates attributes in memory, then ``flush()`` sends
+    an UPDATE to Postgres. SQLAlchemy tracks dirty fields automatically — no
+    explicit UPDATE statement is written in code.
+
+    Raises:
+        NotFound: no book with ``book_id``.
+        AlreadyExists: the new ISBN collides with another book.
+    """
     title = v.require_non_empty(title, "title")
     author = v.require_non_empty(author, "author")
     isbn = v.validate_isbn(isbn)
@@ -53,7 +73,15 @@ def update_book(*, book_id: int, title: str, author: str, isbn: Optional[str]) -
 
 
 def get_book_with_counts(book_id: int) -> tuple[Book, int, int]:
-    """Return a book plus (total_copies, available_copies) for API enrichment."""
+    """Fetch one book and compute how many copies exist vs. are borrowable.
+
+    Runs two queries: one for the book row, one (via ``copy_counts``) that
+    COUNTs all copies and those with status AVAILABLE. Returns a 3-tuple used
+    by the gRPC mapper to populate ``total_copies`` and ``available_copies``.
+
+    Raises:
+        NotFound: no book with ``book_id``.
+    """
     with unit_of_work() as s:
         book = repo.get_book(s, book_id)
         if book is None:
@@ -64,7 +92,15 @@ def get_book_with_counts(book_id: int) -> tuple[Book, int, int]:
 
 
 def list_books(*, query: Optional[str], limit: int, offset: int) -> list[tuple[Book, int, int]]:
-    """List books with per-title copy counts attached for each row."""
+    """Return a page of books, each paired with copy counts.
+
+    ``limit``/``offset`` implement offset pagination (resolved from gRPC
+    ``page_size``/``page_token`` upstream). An optional ``query`` filters by
+    title or author substring (case-insensitive ILIKE in the repository).
+
+    Returns:
+        List of ``(Book, total_copies, available_copies)`` tuples.
+    """
     with unit_of_work() as s:
         books = repo.list_books(s, query=query, limit=limit, offset=offset)
         result = []
@@ -78,6 +114,15 @@ def list_books(*, query: Optional[str], limit: int, offset: int) -> list[tuple[B
 def add_copy(
     *, book_id: int, barcode: str, condition: Optional[CopyCondition], shelf_location: Optional[str]
 ) -> BookCopy:
+    """Add a new physical copy of an existing book.
+
+    New copies start with status AVAILABLE. The barcode must be globally unique
+    (enforced by a DB unique index). Verifies the parent book exists before insert.
+
+    Raises:
+        NotFound: parent book does not exist.
+        AlreadyExists: barcode already in use.
+    """
     barcode = v.require_non_empty(barcode, "barcode")
     shelf_location = v.normalize_optional(shelf_location)
     with unit_of_work() as s:
@@ -105,13 +150,23 @@ def update_copy(
     condition: Optional[CopyCondition],
     shelf_location: Optional[str],
 ) -> BookCopy:
+    """Update a copy's circulation status, physical condition, or shelf location.
+
+    Uses ``get_copy_for_update`` (SELECT … FOR UPDATE) to lock the row so a
+    concurrent borrow cannot slip in while we change status. Business rule: you
+    cannot move a copy off ON_LOAN while an open loan row still exists.
+
+    Only fields passed as non-None are changed (partial update pattern).
+
+    Raises:
+        NotFound: copy does not exist.
+        FailedPrecondition: status change conflicts with an open loan.
+    """
     with unit_of_work() as s:
-        # Row lock prevents a concurrent borrow while we change status.
         copy = repo.get_copy_for_update(s, copy_id)
         if copy is None:
             raise NotFound(f"copy {copy_id} not found")
         if status is not None:
-            # Cannot mark available/lost/etc. while an open loan still references this copy.
             if status != CopyStatus.ON_LOAN and lending_repo.open_loan_for_copy(s, copy_id):
                 raise FailedPrecondition(
                     "copy has an open loan; return it before changing status"
@@ -127,6 +182,10 @@ def update_copy(
 
 
 def list_copies(*, book_id: Optional[int], limit: int, offset: int) -> list[BookCopy]:
+    """List physical copies, optionally filtered to one book.
+
+    Returns detached ``BookCopy`` ORM objects safe to use after the session closes.
+  """
     with unit_of_work() as s:
         copies = list(repo.list_copies(s, book_id=book_id, limit=limit, offset=offset))
         for c in copies:
