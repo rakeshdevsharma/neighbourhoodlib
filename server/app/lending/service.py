@@ -1,4 +1,9 @@
-"""Business logic for borrow, return, and loan queries."""
+"""Business logic for borrow, return, and loan queries.
+
+Borrowing atomically locks a copy, flips its status to ON_LOAN, and inserts a
+loan row. The partial unique index ``one_open_loan_per_copy`` is the database
+backstop against double-borrow races.
+"""
 from __future__ import annotations
 
 import math
@@ -35,12 +40,14 @@ def borrow_book(
             raise FailedPrecondition("member is not active and cannot borrow")
 
         if copy_id:
+            # Lend a specific copy (e.g. barcode scan at the desk).
             copy = books_repo.get_copy_for_update(s, copy_id)
             if copy is None:
                 raise NotFound(f"copy {copy_id} not found")
             if copy.status != CopyStatus.AVAILABLE:
                 raise FailedPrecondition(f"copy {copy_id} is not available")
         else:
+            # Lend any available copy of the requested title.
             copy = books_repo.lock_available_copy(s, book_id)
             if copy is None:
                 if books_repo.get_book(s, book_id) is None:
@@ -56,6 +63,7 @@ def borrow_book(
             )
             s.flush()
         except IntegrityError as e:
+            # Lost race on one_open_loan_per_copy partial unique index.
             raise FailedPrecondition("copy was just borrowed by someone else") from e
         loan = _reload_loan(s, loan.id)
         return loan
@@ -95,6 +103,7 @@ def list_loans(
                 offset=offset,
             )
         )
+        # Touch relationships so they are loaded before expunge (for proto mapping).
         for ln in loans:
             _ = ln.copy.book.title, ln.member.name
         for ln in loans:
@@ -103,6 +112,7 @@ def list_loans(
 
 
 def _compute_fine(due_at: datetime, returned_at: datetime) -> int:
+    """Late fines: one billing day per partial day past due, in cents."""
     if returned_at <= due_at:
         return 0
     days_late = math.ceil((returned_at - due_at).total_seconds() / 86400)

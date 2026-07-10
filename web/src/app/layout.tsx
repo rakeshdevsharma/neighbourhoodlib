@@ -1,3 +1,6 @@
+/**
+ * Next.js root layout — wraps every page with shared HTML shell and global styles.
+ */
 import type { Metadata } from "next";
 import "./globals.css";
 

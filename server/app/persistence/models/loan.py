@@ -1,3 +1,8 @@
+"""ORM model for a borrowing transaction (loan).
+
+A loan ties one member to one copy for a period bounded by ``borrowed_at``,
+``due_at``, and optionally ``returned_at``. Fines are computed on return.
+"""
 from __future__ import annotations
 
 from datetime import datetime

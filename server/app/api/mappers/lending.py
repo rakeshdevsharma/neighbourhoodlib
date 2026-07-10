@@ -1,3 +1,8 @@
+"""Map domain Loan models to protobuf Loan messages.
+
+Loan status (outstanding / overdue / returned) is derived at mapping time from
+``returned_at`` and ``due_at`` rather than stored as a separate DB column.
+"""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -28,6 +33,7 @@ def loan_to_pb(loan: Loan, now: Optional[datetime] = None) -> pb.Loan:
         copy_id=loan.copy_id,
         member_id=loan.member_id,
         fine_cents=loan.fine_cents,
+        # Denormalized display fields (require copy.book and member to be loaded).
         book_id=loan.copy.book_id,
         book_title=loan.copy.book.title,
         member_name=loan.member.name,

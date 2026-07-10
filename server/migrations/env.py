@@ -1,4 +1,9 @@
-"""Alembic environment. Uses DATABASE_URL and the ORM metadata."""
+"""Alembic environment. Uses DATABASE_URL and the ORM metadata.
+
+Alembic reads ``target_metadata`` from the SQLAlchemy models so autogenerate
+can diff the ORM against the live database. ``env.py`` overrides the ini-file
+URL with the ``DATABASE_URL`` environment variable.
+"""
 from __future__ import annotations
 
 import os
@@ -19,6 +24,7 @@ target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
+    """Emit SQL to stdout without connecting (``alembic upgrade head --sql``)."""
     context.configure(
         url=database_url,
         target_metadata=target_metadata,
@@ -30,6 +36,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    """Apply migrations against a live database connection."""
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

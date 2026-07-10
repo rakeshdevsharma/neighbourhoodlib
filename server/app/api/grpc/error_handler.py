@@ -1,4 +1,9 @@
-"""Map domain errors to gRPC status codes."""
+"""Map domain errors to gRPC status codes.
+
+The ``@handle`` decorator wraps every RPC method so services can raise plain
+``DomainError`` subclasses without importing grpc. Unexpected exceptions become
+INTERNAL after logging the stack trace.
+"""
 from __future__ import annotations
 
 import logging
@@ -33,7 +38,7 @@ def handle(fn):
         try:
             return fn(self, request, context)
         except grpc.RpcError:
-            raise
+            raise  # already a gRPC error; do not wrap
         except Exception as exc:  # noqa: BLE001 - deliberate boundary catch
             abort(context, exc)
 

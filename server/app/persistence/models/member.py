@@ -1,3 +1,8 @@
+"""ORM model for library patrons (members).
+
+Members borrow copies via loan rows. Email is the natural unique identifier;
+status gates whether circulation is allowed.
+"""
 from __future__ import annotations
 
 from datetime import datetime

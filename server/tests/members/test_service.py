@@ -14,6 +14,7 @@ def test_member_email_validation():
 
 
 def test_duplicate_email_rejected():
+    # Email uniqueness is enforced by DB index; service maps to AlreadyExists.
     member("dup@example.com")
     with pytest.raises(AlreadyExists):
         member("dup@example.com")

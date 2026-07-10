@@ -1,5 +1,10 @@
 "use client";
 
+/**
+ * Main library admin UI — a tabbed single page that talks to the backend via
+ * gRPC-Web (through Envoy). Each tab is a self-contained section with its own
+ * forms, list view, and success/error banners.
+ */
 import { useCallback, useEffect, useState } from "react";
 import { client, grpcMessage, pb } from "@/lib/client";
 
@@ -29,6 +34,7 @@ export default function Home() {
   );
 }
 
+/** Shared flash banner state for success and gRPC error messages. */
 function useBanner() {
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
@@ -41,7 +47,7 @@ function useBanner() {
 }
 
 // --------------------------------------------------------------------------- //
-// Books
+// Books — catalog titles, add copies, list availability
 // --------------------------------------------------------------------------- //
 function BooksSection() {
   const [books, setBooks] = useState<pb.Book.AsObject[]>([]);
@@ -200,7 +206,7 @@ function BooksSection() {
 }
 
 // --------------------------------------------------------------------------- //
-// Members
+// Members — register patrons and list membership status
 // --------------------------------------------------------------------------- //
 function MembersSection() {
   const [members, setMembers] = useState<pb.Member.AsObject[]>([]);
@@ -309,7 +315,7 @@ function MembersSection() {
 }
 
 // --------------------------------------------------------------------------- //
-// Loans
+// Loans — borrow by member+book, return by loan id, filterable list
 // --------------------------------------------------------------------------- //
 function LoansSection() {
   const [loans, setLoans] = useState<pb.Loan.AsObject[]>([]);

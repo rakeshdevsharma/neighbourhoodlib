@@ -10,6 +10,7 @@ import enum
 
 
 class CopyStatus(enum.Enum):
+    """Circulation state of a physical copy on the shelf."""
     AVAILABLE = "available"
     ON_LOAN = "on_loan"
     LOST = "lost"
@@ -18,12 +19,14 @@ class CopyStatus(enum.Enum):
 
 
 class CopyCondition(enum.Enum):
+    """Physical wear of a copy (independent of circulation status)."""
     NEW = "new"
     GOOD = "good"
     WORN = "worn"
 
 
 class MemberStatus(enum.Enum):
+    """Whether a patron may borrow books."""
     ACTIVE = "active"
     SUSPENDED = "suspended"
 

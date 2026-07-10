@@ -1,4 +1,9 @@
-"""gRPC server entrypoint."""
+"""gRPC server entrypoint.
+
+Binds the LibraryService servicer on an insecure port (TLS is expected to be
+terminated upstream, e.g. by Envoy in production). Enables server reflection so
+tools like grpcurl can discover RPCs without stub files.
+"""
 from __future__ import annotations
 
 import logging
@@ -19,6 +24,7 @@ log = logging.getLogger("library.server")
 
 
 def serve() -> None:
+    # Thread pool handles concurrent RPCs; each RPC opens its own DB transaction.
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     pb_grpc.add_LibraryServiceServicer_to_server(LibraryServicer(), server)
 

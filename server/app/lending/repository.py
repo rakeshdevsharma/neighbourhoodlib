@@ -1,4 +1,8 @@
-"""Data-access layer for loans."""
+"""Data-access layer for loans.
+
+Loan rows link a member to a physical copy for a borrowing period. Open loans
+have ``returned_at IS NULL``; the schema enforces at most one open loan per copy.
+"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -27,6 +31,7 @@ def get_loan_for_update(session: Session, loan_id: int) -> Optional[Loan]:
 
 
 def open_loan_for_copy(session: Session, copy_id: int) -> Optional[Loan]:
+    """Return the active (unreturned) loan for a copy, if any."""
     stmt = select(Loan).where(Loan.copy_id == copy_id, Loan.returned_at.is_(None))
     return session.scalars(stmt).first()
 

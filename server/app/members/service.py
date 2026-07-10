@@ -1,4 +1,8 @@
-"""Business logic for library members."""
+"""Business logic for library members.
+
+Members are identified by unique email. Only ACTIVE members may borrow; status
+can be set to SUSPENDED via update to block circulation without deleting history.
+"""
 from __future__ import annotations
 
 from typing import Optional

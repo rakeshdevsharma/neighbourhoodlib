@@ -1,3 +1,4 @@
+# Exclude from Docker build context to keep the web image layer small.
 node_modules
 .next
 gen

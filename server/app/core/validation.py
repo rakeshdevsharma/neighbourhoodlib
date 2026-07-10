@@ -1,4 +1,8 @@
-"""Input validation helpers, raising InvalidArgument on failure."""
+"""Input validation helpers, raising InvalidArgument on failure.
+
+Validation runs in the service layer before any database write so clients receive
+a consistent INVALID_ARGUMENT gRPC status for bad input.
+"""
 from __future__ import annotations
 
 import re
@@ -35,6 +39,7 @@ def validate_isbn(value: str | None) -> str | None:
     if value is None:
         return None
     digits = value.replace("-", "").replace(" ", "")
+    # Last char may be 'X' on ISBN-10; we only validate length and digit body.
     if len(digits) not in (10, 13) or not digits[:-1].isdigit():
         raise InvalidArgument("isbn must be a 10- or 13-digit ISBN")
     return value

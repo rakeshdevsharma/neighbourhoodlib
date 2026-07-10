@@ -55,6 +55,7 @@ def member_status_from_pb(value: int) -> Optional[MemberStatus]:
 
 
 def loan_status_filter_from_pb(value: int) -> Optional[str]:
+    """Map proto LoanStatus filter to repository query string (or None for all)."""
     return {
         pb.LOAN_STATUS_UNSPECIFIED: None,
         pb.LOAN_STATUS_OUTSTANDING: "outstanding",

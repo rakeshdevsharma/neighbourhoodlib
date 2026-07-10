@@ -1,4 +1,10 @@
-"""Business logic for bibliographic records and physical copies."""
+"""Business logic for bibliographic records and physical copies.
+
+This layer owns validation, orchestration, and domain error translation. It
+calls repositories for SQL and wraps each operation in a unit of work. Entities
+are expunged before return so they can be mapped to protobuf after the session
+closes.
+"""
 from __future__ import annotations
 
 from typing import Optional
@@ -23,6 +29,7 @@ def create_book(*, title: str, author: str, isbn: Optional[str]) -> Book:
             book = repo.add_book(s, title=title, author=author, isbn=isbn)
             s.flush()
         except IntegrityError as e:
+            # Unique index on isbn (when non-null).
             raise AlreadyExists("a book with this isbn already exists") from e
         s.expunge(book)
         return book
@@ -46,6 +53,7 @@ def update_book(*, book_id: int, title: str, author: str, isbn: Optional[str]) -
 
 
 def get_book_with_counts(book_id: int) -> tuple[Book, int, int]:
+    """Return a book plus (total_copies, available_copies) for API enrichment."""
     with unit_of_work() as s:
         book = repo.get_book(s, book_id)
         if book is None:
@@ -56,6 +64,7 @@ def get_book_with_counts(book_id: int) -> tuple[Book, int, int]:
 
 
 def list_books(*, query: Optional[str], limit: int, offset: int) -> list[tuple[Book, int, int]]:
+    """List books with per-title copy counts attached for each row."""
     with unit_of_work() as s:
         books = repo.list_books(s, query=query, limit=limit, offset=offset)
         result = []
@@ -97,10 +106,12 @@ def update_copy(
     shelf_location: Optional[str],
 ) -> BookCopy:
     with unit_of_work() as s:
+        # Row lock prevents a concurrent borrow while we change status.
         copy = repo.get_copy_for_update(s, copy_id)
         if copy is None:
             raise NotFound(f"copy {copy_id} not found")
         if status is not None:
+            # Cannot mark available/lost/etc. while an open loan still references this copy.
             if status != CopyStatus.ON_LOAN and lending_repo.open_loan_for_copy(s, copy_id):
                 raise FailedPrecondition(
                     "copy has an open loan; return it before changing status"

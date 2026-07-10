@@ -1,3 +1,4 @@
+# Convenience targets for local development, codegen, testing, and Docker ops.
 .PHONY: help up down logs build push proto-py proto-web seed test psql clean
 
 help:

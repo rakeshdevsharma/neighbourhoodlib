@@ -1,5 +1,11 @@
 """initial schema: enums, books, book_copies, members, loans
 
+Creates the core relational model for the neighbourhood library:
+  - PostgreSQL ENUM types for copy status/condition and member status
+  - books (catalog) and book_copies (physical items)
+  - members (patrons) and loans (circulation records)
+  - partial unique index ensuring at most one open loan per copy
+
 Revision ID: 0001
 Revises:
 Create Date: 2026-07-07
@@ -22,6 +28,7 @@ member_status = postgresql.ENUM("active", "suspended", name="member_status")
 
 def upgrade() -> None:
     bind = op.get_bind()
+    # Create ENUM types before tables that reference them.
     copy_status.create(bind, checkfirst=True)
     copy_condition.create(bind, checkfirst=True)
     member_status.create(bind, checkfirst=True)

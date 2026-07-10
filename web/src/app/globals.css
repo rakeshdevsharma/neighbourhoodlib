@@ -1,3 +1,7 @@
+/**
+ * Global styles for the single-page library admin UI.
+ * Layout is intentionally minimal: cards, tables, and status pills only.
+ */
 * { box-sizing: border-box; }
 
 body {
@@ -13,6 +17,7 @@ h1 { font-size: 24px; margin-bottom: 4px; }
 h2 { font-size: 18px; margin: 0 0 12px; }
 .muted { color: #6b7280; font-size: 13px; }
 
+/* Tab navigation between Books / Members / Loans sections */
 .tabs { display: flex; gap: 8px; margin: 20px 0; }
 .tabs button {
   border: 1px solid #d1d5db; background: #fff; padding: 8px 16px;
@@ -42,6 +47,7 @@ table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eee; }
 th { color: #6b7280; font-weight: 600; font-size: 12px; text-transform: uppercase; }
 
+/* Semantic status chips used in tables */
 .pill { padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
 .pill.ok { background: #dcfce7; color: #166534; }
 .pill.warn { background: #fef3c7; color: #92400e; }

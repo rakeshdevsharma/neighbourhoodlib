@@ -9,6 +9,7 @@ from tests.helpers import book_with_copies
 
 
 def test_create_book_requires_title():
+    # Whitespace-only title must be rejected before hitting the database.
     with pytest.raises(InvalidArgument):
         books_svc.create_book(title="  ", author="A", isbn=None)
 
@@ -25,6 +26,7 @@ def test_invalid_isbn_rejected():
 
 
 def test_book_counts_reflect_copies():
+    # available_copies should equal total when nothing is on loan.
     book = book_with_copies(3)
     _, total, available = books_svc.get_book_with_counts(book.id)
     assert (total, available) == (3, 3)

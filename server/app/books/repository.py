@@ -1,4 +1,8 @@
-"""Data-access layer for books and physical copies."""
+"""Data-access layer for books and physical copies.
+
+Repositories contain SQL only — no validation or business rules. Callers pass
+an open ``Session`` so multiple reads/writes share one transaction.
+"""
 from __future__ import annotations
 
 from typing import Optional, Sequence
@@ -13,7 +17,7 @@ from app.persistence.models import Book, BookCopy
 def add_book(session: Session, *, title: str, author: str, isbn: Optional[str]) -> Book:
     book = Book(title=title, author=author, isbn=isbn)
     session.add(book)
-    session.flush()
+    session.flush()  # populate book.id before returning
     return book
 
 
@@ -26,6 +30,7 @@ def list_books(
 ) -> Sequence[Book]:
     stmt = select(Book)
     if query:
+        # Case-insensitive substring match on title or author.
         like = f"%{query}%"
         stmt = stmt.where(or_(Book.title.ilike(like), Book.author.ilike(like)))
     stmt = stmt.order_by(Book.id).limit(limit).offset(offset)
@@ -70,6 +75,7 @@ def get_copy(session: Session, copy_id: int) -> Optional[BookCopy]:
 
 
 def get_copy_for_update(session: Session, copy_id: int) -> Optional[BookCopy]:
+    """Load a copy with a row-level lock (``SELECT … FOR UPDATE``)."""
     stmt = select(BookCopy).where(BookCopy.id == copy_id).with_for_update()
     return session.scalars(stmt).first()
 

@@ -1,4 +1,8 @@
-"""Runtime configuration, sourced from environment variables."""
+"""Runtime configuration, sourced from environment variables.
+
+``settings`` is instantiated at import time so modules can read config without
+passing a context object. Override via env vars in Docker or local shell.
+"""
 from __future__ import annotations
 
 import os

@@ -1,3 +1,8 @@
+"""ORM models for bibliographic records and physical copies.
+
+A ``Book`` is the catalog entry (title, author, ISBN). ``BookCopy`` rows are
+individual shelf items tracked by barcode; lending operates on copies, not titles.
+"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -19,6 +24,7 @@ if TYPE_CHECKING:
 
 
 class Book(Base):
+    """Bibliographic record — one row per title in the catalog."""
     __tablename__ = "books"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -38,6 +44,7 @@ class Book(Base):
 
 
 class BookCopy(Base):
+    """A single physical item on the shelf, identified by barcode."""
     __tablename__ = "book_copies"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

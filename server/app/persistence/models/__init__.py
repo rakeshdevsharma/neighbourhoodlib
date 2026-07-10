@@ -1,3 +1,4 @@
+"""Public ORM model exports used by repositories, services, and Alembic."""
 from __future__ import annotations
 
 from app.persistence.models.base import Base

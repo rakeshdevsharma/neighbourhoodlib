@@ -1,3 +1,4 @@
+"""Map domain BookCopy models to protobuf BookCopy messages."""
 from __future__ import annotations
 
 import library_pb2 as pb

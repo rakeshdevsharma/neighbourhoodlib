@@ -1,4 +1,9 @@
-"""gRPC servicer: thin adapter translating proto <-> domain and errors <-> codes."""
+"""gRPC servicer: thin adapter translating proto <-> domain and errors <-> codes.
+
+Each RPC method validates nothing itself — it maps request fields to service
+calls, converts results via mappers, and applies pagination helpers. Business
+rules and DB access live entirely in the service/repository layers.
+"""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -30,6 +35,7 @@ class LibraryServicer(pb_grpc.LibraryServiceServicer):
         book = books_svc.create_book(
             title=request.title, author=request.author, isbn=request.isbn
         )
+        # Counts are zero on create; client can call GetBook for live totals.
         return book_to_pb(book, 0, 0)
 
     @handle
@@ -126,6 +132,7 @@ class LibraryServicer(pb_grpc.LibraryServiceServicer):
     # ---- Lending -------------------------------------------------------- #
     @handle
     def BorrowBook(self, request, context):
+        # Proto oneof: lend by title (any copy) or by specific copy id.
         target = request.WhichOneof("target")
         loan = lending_svc.borrow_book(
             member_id=request.member_id,
@@ -142,7 +149,7 @@ class LibraryServicer(pb_grpc.LibraryServiceServicer):
     @handle
     def ListLoans(self, request, context):
         limit, offset = pagination.resolve(request.page_size, request.page_token)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)  # drives overdue vs outstanding in mapper
         loans = lending_svc.list_loans(
             member_id=request.member_id or None,
             status_filter=loan_status_filter_from_pb(request.status),
