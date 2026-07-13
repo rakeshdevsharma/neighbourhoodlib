@@ -11,6 +11,8 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Settings:
+    """Immutable runtime configuration read once from environment variables."""
+
     database_url: str
     grpc_port: int
     loan_period_days: int
@@ -20,6 +22,11 @@ class Settings:
 
     @staticmethod
     def from_env() -> "Settings":
+        """Build settings from environment variables, falling back to dev defaults.
+
+        Called once at import time; ``settings`` is shared process-wide. Docker
+        Compose injects ``DATABASE_URL``, ``LOAN_PERIOD_DAYS``, etc.
+        """
         return Settings(
             database_url=os.environ.get(
                 "DATABASE_URL",

@@ -13,6 +13,7 @@ _MEMBER_STATUS_TO_PB = {
 
 
 def member_to_pb(member: Member) -> pb.Member:
+    """Convert a detached ``Member`` ORM object to protobuf."""
     return pb.Member(
         id=member.id,
         name=member.name,

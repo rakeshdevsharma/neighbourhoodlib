@@ -23,6 +23,11 @@ MEMBERS = [
 
 
 def run() -> None:
+    """Insert sample books, copies, and members (safe to re-run).
+
+    Uses the real service layer so validation and constraints apply. Catches
+    ``AlreadyExists`` for idempotent startup seeding when data is already present.
+    """
     for i, (title, author, isbn, n_copies) in enumerate(BOOKS):
         try:
             book = books_svc.create_book(title=title, author=author, isbn=isbn)

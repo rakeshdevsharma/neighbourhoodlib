@@ -41,8 +41,7 @@ api/grpc/servicer  →  {books,members,lending}/service  →  */repository  → 
 Prerequisites: **Docker** + **Docker Compose** (v2).
 
 ```bash
-cp .env.example .env      # optional; sensible defaults are built in
-docker compose up --build
+docker compose up
 ```
 
 This starts four containers and, on first boot, applies migrations and seeds a

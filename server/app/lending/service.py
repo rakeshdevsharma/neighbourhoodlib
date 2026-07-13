@@ -33,21 +33,21 @@ def borrow_book(
 ) -> Loan:
     """Check out a book to a member.
 
-  Flow (all in one transaction):
-    1. Verify member exists and is ACTIVE.
-    2. Lock an available copy — either the specific ``copy_id`` or any copy of
-       ``book_id`` via ``lock_available_copy`` (SKIP LOCKED).
-    3. Set copy.status = ON_LOAN.
-    4. INSERT a loan row with due_at = now + LOAN_PERIOD_DAYS.
+    Flow (all in one transaction):
+      1. Verify member exists and is ACTIVE.
+      2. Lock an available copy — either the specific ``copy_id`` or any copy of
+         ``book_id`` via ``lock_available_copy`` (SKIP LOCKED).
+      3. Set copy.status = ON_LOAN.
+      4. INSERT a loan row with due_at = now + LOAN_PERIOD_DAYS.
 
-  The partial unique index on ``loans(copy_id) WHERE returned_at IS NULL``
-  prevents two open loans on the same copy; a race surfaces as IntegrityError.
+    The partial unique index on ``loans(copy_id) WHERE returned_at IS NULL``
+    prevents two open loans on the same copy; a race surfaces as IntegrityError.
 
-  Raises:
-      InvalidArgument: neither book_id nor copy_id provided.
-      NotFound: member, book, or copy missing.
-      FailedPrecondition: member suspended, copy unavailable, or sold out.
-  """
+    Raises:
+        InvalidArgument: neither book_id nor copy_id provided.
+        NotFound: member, book, or copy missing.
+        FailedPrecondition: member suspended, copy unavailable, or sold out.
+    """
     if not book_id and not copy_id:
         raise InvalidArgument("either book_id or copy_id must be provided")
     with unit_of_work() as s:
@@ -87,13 +87,13 @@ def borrow_book(
 def return_book(*, loan_id: int, mark_damaged: bool) -> Loan:
     """Close an open loan and put the copy back on the shelf.
 
-  Sets ``returned_at``, computes late fines, and updates copy status to
-  AVAILABLE (or DAMAGED + condition WORN if ``mark_damaged`` is True).
+    Sets ``returned_at``, computes late fines, and updates copy status to
+    AVAILABLE (or DAMAGED + condition WORN if ``mark_damaged`` is True).
 
-  Raises:
-      NotFound: loan does not exist.
-      FailedPrecondition: loan already returned.
-  """
+    Raises:
+        NotFound: loan does not exist.
+        FailedPrecondition: loan already returned.
+    """
     with unit_of_work() as s:
         loan = repo.get_loan_for_update(s, loan_id)
         if loan is None:
@@ -118,11 +118,11 @@ def list_loans(
 ) -> list[Loan]:
     """Query loans with optional member and status filters.
 
-  ``status_filter`` values (``outstanding``, ``returned``, ``overdue``) are
-  plain strings translated from proto enums upstream. Eager-loaded relationships
-  (copy→book, member) are touched before ``expunge`` so proto mapping works
-  outside the session.
-  """
+    ``status_filter`` values (``outstanding``, ``returned``, ``overdue``) are
+    plain strings translated from proto enums upstream. Eager-loaded relationships
+    (copy→book, member) are touched before ``expunge`` so proto mapping works
+    outside the session.
+    """
     with unit_of_work() as s:
         loans = list(
             repo.list_loans(

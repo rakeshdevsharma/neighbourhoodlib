@@ -29,9 +29,22 @@ from app.members import service as members_svc
 
 
 class LibraryServicer(pb_grpc.LibraryServiceServicer):
+    """gRPC adapter for ``LibraryService`` defined in ``library.proto``.
+
+    Each method is a thin translation layer: proto request fields → service call
+    → domain result → proto response. The ``@handle`` decorator converts domain
+    errors (``NotFound``, etc.) into gRPC status codes so this class never
+    imports business rules directly.
+    """
+
     # ---- Books ---------------------------------------------------------- #
     @handle
     def CreateBook(self, request, context):
+        """RPC: register a new catalog title (title, author, optional ISBN).
+
+        Delegates to ``books_svc.create_book``. Copy counts are zero on create;
+        call ``GetBook`` after adding copies to see live availability.
+        """
         book = books_svc.create_book(
             title=request.title, author=request.author, isbn=request.isbn
         )
@@ -40,6 +53,11 @@ class LibraryServicer(pb_grpc.LibraryServiceServicer):
 
     @handle
     def UpdateBook(self, request, context):
+        """RPC: change bibliographic fields on an existing book.
+
+        After update, re-fetches copy counts so the response reflects current
+        shelf availability (``total_copies`` / ``available_copies``).
+        """
         book = books_svc.update_book(
             book_id=request.id,
             title=request.title,
@@ -51,11 +69,17 @@ class LibraryServicer(pb_grpc.LibraryServiceServicer):
 
     @handle
     def GetBook(self, request, context):
+        """RPC: fetch one book by id, including live copy counts."""
         book, total, available = books_svc.get_book_with_counts(request.id)
         return book_to_pb(book, total, available)
 
     @handle
     def ListBooks(self, request, context):
+        """RPC: paginated catalog search.
+
+        ``page_size``/``page_token`` are resolved to SQL ``limit``/``offset`` via
+        ``pagination.resolve``. An optional ``query`` filters by title/author.
+        """
         limit, offset = pagination.resolve(request.page_size, request.page_token)
         rows = books_svc.list_books(query=request.query or None, limit=limit, offset=offset)
         return pb.ListBooksResponse(
@@ -66,6 +90,11 @@ class LibraryServicer(pb_grpc.LibraryServiceServicer):
     # ---- Copies --------------------------------------------------------- #
     @handle
     def AddCopy(self, request, context):
+        """RPC: add a physical copy of an existing book.
+
+        Proto enums (condition) are converted to domain enums before the service
+        layer inserts a row with status AVAILABLE.
+        """
         copy = books_svc.add_copy(
             book_id=request.book_id,
             barcode=request.barcode,
@@ -76,6 +105,11 @@ class LibraryServicer(pb_grpc.LibraryServiceServicer):
 
     @handle
     def UpdateCopy(self, request, context):
+        """RPC: change a copy's circulation status, condition, or shelf location.
+
+        Only non-default proto enum values are applied (UNSPECIFIED means "leave
+        unchanged"). Status changes are blocked while an open loan exists.
+        """
         copy = books_svc.update_copy(
             copy_id=request.id,
             status=copy_status_from_pb(request.status),
@@ -86,6 +120,7 @@ class LibraryServicer(pb_grpc.LibraryServiceServicer):
 
     @handle
     def ListCopies(self, request, context):
+        """RPC: list physical copies, optionally filtered to one ``book_id``."""
         limit, offset = pagination.resolve(request.page_size, request.page_token)
         copies = books_svc.list_copies(
             book_id=request.book_id or None, limit=limit, offset=offset
@@ -98,6 +133,7 @@ class LibraryServicer(pb_grpc.LibraryServiceServicer):
     # ---- Members -------------------------------------------------------- #
     @handle
     def CreateMember(self, request, context):
+        """RPC: register a new library patron (name, email, optional phone)."""
         member = members_svc.create_member(
             name=request.name, email=request.email, phone=request.phone
         )
@@ -105,6 +141,11 @@ class LibraryServicer(pb_grpc.LibraryServiceServicer):
 
     @handle
     def UpdateMember(self, request, context):
+        """RPC: update member profile and optionally suspend borrowing.
+
+        Setting status to SUSPENDED blocks future borrows without deleting loan
+        history.
+        """
         member = members_svc.update_member(
             member_id=request.id,
             name=request.name,
@@ -116,10 +157,12 @@ class LibraryServicer(pb_grpc.LibraryServiceServicer):
 
     @handle
     def GetMember(self, request, context):
+        """RPC: fetch a single member by id."""
         return member_to_pb(members_svc.get_member(request.id))
 
     @handle
     def ListMembers(self, request, context):
+        """RPC: paginated member search by name or email substring."""
         limit, offset = pagination.resolve(request.page_size, request.page_token)
         members = members_svc.list_members(
             query=request.query or None, limit=limit, offset=offset
@@ -132,7 +175,11 @@ class LibraryServicer(pb_grpc.LibraryServiceServicer):
     # ---- Lending -------------------------------------------------------- #
     @handle
     def BorrowBook(self, request, context):
-        # Proto oneof: lend by title (any copy) or by specific copy id.
+        """RPC: check out a book to a member.
+
+        The request uses a proto ``oneof``: lend by ``book_id`` (any available
+        copy, SKIP LOCKED) or by specific ``copy_id``. Exactly one must be set.
+        """
         target = request.WhichOneof("target")
         loan = lending_svc.borrow_book(
             member_id=request.member_id,
@@ -143,11 +190,21 @@ class LibraryServicer(pb_grpc.LibraryServiceServicer):
 
     @handle
     def ReturnBook(self, request, context):
+        """RPC: close an open loan and return the copy to the shelf.
+
+        ``mark_damaged`` sets the copy to DAMAGED/WORN instead of AVAILABLE.
+        Late fines are computed and stored on the loan row.
+        """
         loan = lending_svc.return_book(loan_id=request.loan_id, mark_damaged=request.mark_damaged)
         return loan_to_pb(loan)
 
     @handle
     def ListLoans(self, request, context):
+        """RPC: paginated loan history with optional member/status filters.
+
+        Loan status (outstanding/overdue/returned) is derived at mapping time
+        from ``returned_at`` and ``due_at`` — not stored as a DB column.
+        """
         limit, offset = pagination.resolve(request.page_size, request.page_token)
         now = datetime.now(timezone.utc)  # drives overdue vs outstanding in mapper
         loans = lending_svc.list_loans(

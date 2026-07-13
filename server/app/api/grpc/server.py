@@ -24,7 +24,12 @@ log = logging.getLogger("library.server")
 
 
 def serve() -> None:
-    # Thread pool handles concurrent RPCs; each RPC opens its own DB transaction.
+    """Start the gRPC server and block until shutdown.
+
+    Creates a thread pool (10 workers) so multiple RPCs run concurrently; each
+    RPC opens its own DB transaction via ``unit_of_work``. Binds an insecure port
+    — TLS is expected upstream (Envoy). Enables server reflection for grpcurl.
+    """
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     pb_grpc.add_LibraryServiceServicer_to_server(LibraryServicer(), server)
 

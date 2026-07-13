@@ -29,6 +29,11 @@ _MEMBER_STATUS_FROM_PB = {
 
 
 def copy_status_from_pb(value: int, *, required: bool = False) -> Optional[CopyStatus]:
+    """Map a protobuf ``CopyStatus`` enum to the domain enum.
+
+    ``UNSPECIFIED`` means "not provided" unless ``required=True`` (update flows).
+    Unknown values raise ``InvalidArgument``.
+    """
     if value == pb.COPY_STATUS_UNSPECIFIED:
         if required:
             raise InvalidArgument("status must be specified")
@@ -39,6 +44,7 @@ def copy_status_from_pb(value: int, *, required: bool = False) -> Optional[CopyS
 
 
 def copy_condition_from_pb(value: int) -> Optional[CopyCondition]:
+    """Map protobuf ``CopyCondition`` to domain; UNSPECIFIED → None."""
     if value == pb.COPY_CONDITION_UNSPECIFIED:
         return None
     if value not in _COPY_CONDITION_FROM_PB:
@@ -47,6 +53,7 @@ def copy_condition_from_pb(value: int) -> Optional[CopyCondition]:
 
 
 def member_status_from_pb(value: int) -> Optional[MemberStatus]:
+    """Map protobuf ``MemberStatus`` to domain; UNSPECIFIED → None (no change)."""
     if value == pb.MEMBER_STATUS_UNSPECIFIED:
         return None
     if value not in _MEMBER_STATUS_FROM_PB:
@@ -55,7 +62,10 @@ def member_status_from_pb(value: int) -> Optional[MemberStatus]:
 
 
 def loan_status_filter_from_pb(value: int) -> Optional[str]:
-    """Map proto LoanStatus filter to repository query string (or None for all)."""
+    """Map proto ``LoanStatus`` filter to repository query string (or None for all).
+
+    The DB stores only timestamps; "overdue" is computed as open + past due_at.
+    """
     return {
         pb.LOAN_STATUS_UNSPECIFIED: None,
         pb.LOAN_STATUS_OUTSTANDING: "outstanding",

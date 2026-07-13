@@ -19,6 +19,12 @@ if TYPE_CHECKING:
 
 
 class Loan(Base):
+    """A borrowing transaction linking one member to one physical copy.
+
+    Open loans have ``returned_at IS NULL``. A partial unique index on
+    ``copy_id`` (where returned_at is null) prevents double-borrow at the DB level.
+    ``fine_cents`` is computed on return based on days past ``due_at``.
+    """
     __tablename__ = "loans"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

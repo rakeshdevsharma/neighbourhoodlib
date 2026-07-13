@@ -10,7 +10,12 @@ from app.core.errors import InvalidArgument
 
 
 def resolve(page_size: int, page_token: str) -> tuple[int, int]:
-    """Return (limit, offset) from a request's page_size/page_token."""
+    """Convert gRPC pagination fields to SQL ``(limit, offset)``.
+
+    ``page_size`` of 0 uses ``settings.default_page_size``; values above
+    ``max_page_size`` are capped. ``page_token`` is the stringified offset from
+    a previous ``next_page_token`` (opaque to clients).
+    """
     if page_size < 0:
         raise InvalidArgument("page_size must be >= 0")
     limit = page_size or settings.default_page_size
@@ -28,7 +33,11 @@ def resolve(page_size: int, page_token: str) -> tuple[int, int]:
 
 
 def next_token(offset: int, limit: int, returned: int) -> str:
-    """Next token if a full page was returned, else empty (last page)."""
+    """Compute the token for the next page, or "" if this was the last page.
+
+    A full page (``returned == limit``) implies more rows may exist; an empty
+    token tells clients to stop paginating.
+    """
     if returned < limit:
         return ""
     return str(offset + limit)

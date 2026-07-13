@@ -185,7 +185,7 @@ def list_copies(*, book_id: Optional[int], limit: int, offset: int) -> list[Book
     """List physical copies, optionally filtered to one book.
 
     Returns detached ``BookCopy`` ORM objects safe to use after the session closes.
-  """
+    """
     with unit_of_work() as s:
         copies = list(repo.list_copies(s, book_id=book_id, limit=limit, offset=offset))
         for c in copies:

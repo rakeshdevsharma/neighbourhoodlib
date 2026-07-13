@@ -19,6 +19,11 @@ if TYPE_CHECKING:
 
 
 class Member(Base):
+    """Library patron who can borrow copies via loan rows.
+
+    Email is unique (natural key). ``status`` gates borrowing: only ACTIVE members
+    may check out books; SUSPENDED blocks new loans without deleting history.
+    """
     __tablename__ = "members"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

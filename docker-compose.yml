@@ -20,13 +20,13 @@ services:
       retries: 10
 
   server:
-    image: ${IMAGE_REGISTRY:-neighbourhoodlib}-server:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-rakeshdev/neighbourhoodlib}-server:${IMAGE_TAG:-v0.2.0}
     build:
       context: .
       dockerfile: server/Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-library}:${POSTGRES_PASSWORD:-library}@db:5432/${POSTGRES_DB:-library}
-      GRPC_PORT: "50051"
+      GRPC_PORT: "50051"  
       LOAN_PERIOD_DAYS: ${LOAN_PERIOD_DAYS:-14}
       FINE_CENTS_PER_DAY: ${FINE_CENTS_PER_DAY:-25}
       SEED_ON_START: ${SEED_ON_START:-true}
@@ -47,7 +47,7 @@ services:
       - server
 
   web:
-    image: ${IMAGE_REGISTRY:-neighbourhoodlib}-web:${IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-rakeshdev/neighbourhoodlib}-web:${IMAGE_TAG:-v0.2.0}
     build:
       context: .
       dockerfile: web/Dockerfile

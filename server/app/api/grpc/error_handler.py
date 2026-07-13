@@ -23,6 +23,12 @@ _ERROR_CODES = {
 
 
 def abort(context: grpc.ServicerContext, exc: Exception) -> None:
+    """Translate a caught exception into a gRPC error response.
+
+    Known ``DomainError`` subclasses map to specific status codes (404-style
+    NOT_FOUND, etc.). Anything else is logged and returned as INTERNAL so clients
+    never see raw stack traces.
+    """
     for exc_type, code in _ERROR_CODES.items():
         if isinstance(exc, exc_type):
             context.abort(code, str(exc))
@@ -32,9 +38,10 @@ def abort(context: grpc.ServicerContext, exc: Exception) -> None:
 
 
 def handle(fn):
-    """Decorator mapping domain errors to gRPC status codes."""
+    """Decorator that wraps RPC methods in try/except → ``abort`` translation."""
 
     def wrapper(self, request, context):
+        """Invoke the RPC handler; convert domain errors to gRPC status codes."""
         try:
             return fn(self, request, context)
         except grpc.RpcError:

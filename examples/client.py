@@ -22,6 +22,11 @@ ADDR = os.environ.get("GRPC_ADDR", "localhost:50051")
 
 
 def main() -> None:
+    """Exercise the full gRPC API: create → borrow → list → error → return.
+
+    Connects via insecure channel (TLS terminated upstream in production).
+    Demonstrates proto oneof borrow-by-book-id and gRPC error handling.
+    """
     channel = grpc.insecure_channel(ADDR)
     stub = pb_grpc.LibraryServiceStub(channel)
 
@@ -83,6 +88,10 @@ def main() -> None:
     # 8. Return the first loan.
     returned = stub.ReturnBook(pb.ReturnBookRequest(loan_id=loan.id))
     print(f"returned loan #{returned.id}; fine={returned.fine_cents} cents")
+
+    books = stub.ListBooks(pb.ListBooksRequest())
+    for book in books.books:
+        print(f"  book #{book.id}: {book.title}, {book.author}, {book.isbn}, {book.total_copies}, {book.available_copies}")
 
     print("done.")
 

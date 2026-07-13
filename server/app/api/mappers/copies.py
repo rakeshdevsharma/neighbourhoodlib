@@ -22,6 +22,11 @@ _COPY_CONDITION_TO_PB = {
 
 
 def copy_to_pb(copy: BookCopy) -> pb.BookCopy:
+    """Convert a detached ``BookCopy`` ORM object to protobuf.
+
+    Domain enums (``CopyStatus``, ``CopyCondition``) are mapped via lookup tables
+    to the integer enum values defined in ``library.proto``.
+    """
     return pb.BookCopy(
         id=copy.id,
         book_id=copy.book_id,

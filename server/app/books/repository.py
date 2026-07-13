@@ -17,9 +17,9 @@ from app.persistence.models import Book, BookCopy
 def add_book(session: Session, *, title: str, author: str, isbn: Optional[str]) -> Book:
     """INSERT a new ``books`` row and return the ORM object.
 
-  ``session.add`` stages the insert; ``flush()`` sends SQL immediately so the
-  auto-generated ``id`` is available without committing the transaction.
-  """
+    ``session.add`` stages the insert; ``flush()`` sends SQL immediately so the
+    auto-generated ``id`` is available without committing the transaction.
+    """
     book = Book(title=title, author=author, isbn=isbn)
     session.add(book)
     session.flush()
@@ -36,10 +36,10 @@ def list_books(
 ) -> Sequence[Book]:
     """SELECT books with optional search and pagination.
 
-  Builds a SQLAlchemy ``select()`` statement dynamically. ``ilike`` is Postgres
-  case-insensitive pattern match; ``%query%`` matches substrings. Results are
-  ordered by id for stable pagination.
-  """
+    Builds a SQLAlchemy ``select()`` statement dynamically. ``ilike`` is Postgres
+    case-insensitive pattern match; ``%query%`` matches substrings. Results are
+    ordered by id for stable pagination.
+    """
     stmt = select(Book)
     if query:
         like = f"%{query}%"
@@ -51,9 +51,9 @@ def list_books(
 def copy_counts(session: Session, book_id: int) -> tuple[int, int]:
     """Run two COUNT queries: all copies vs. those with status AVAILABLE.
 
-  ``session.scalar()`` runs an aggregate query and returns a single number.
-  Used by the service layer to enrich book responses without loading every copy.
-  """
+    ``session.scalar()`` runs an aggregate query and returns a single number.
+    Used by the service layer to enrich book responses without loading every copy.
+    """
     total = session.scalar(
         select(func.count()).select_from(BookCopy).where(BookCopy.book_id == book_id)
     )
@@ -94,10 +94,10 @@ def get_copy(session: Session, copy_id: int) -> Optional[BookCopy]:
 def get_copy_for_update(session: Session, copy_id: int) -> Optional[BookCopy]:
     """Load a copy and lock its row until the transaction ends.
 
-  ``with_for_update()`` appends ``FOR UPDATE`` to the SQL, preventing other
-  transactions from modifying (or SKIP LOCKING) this row until we commit/rollback.
-  Used during borrow, return, and copy status changes.
-  """
+    ``with_for_update()`` appends ``FOR UPDATE`` to the SQL, preventing other
+    transactions from modifying (or SKIP LOCKING) this row until we commit/rollback.
+    Used during borrow, return, and copy status changes.
+    """
     stmt = select(BookCopy).where(BookCopy.id == copy_id).with_for_update()
     return session.scalars(stmt).first()
 
@@ -105,11 +105,11 @@ def get_copy_for_update(session: Session, copy_id: int) -> Optional[BookCopy]:
 def lock_available_copy(session: Session, book_id: int) -> Optional[BookCopy]:
     """Atomically claim one AVAILABLE copy of a book for lending.
 
-  ``FOR UPDATE SKIP LOCKED`` (Postgres-specific): if another transaction already
-  locked the first available copy, this query skips it and grabs the next one
-  instead of waiting. That lets two patrons borrow different copies of the same
-  title concurrently without deadlocks.
-  """
+    ``FOR UPDATE SKIP LOCKED`` (Postgres-specific): if another transaction already
+    locked the first available copy, this query skips it and grabs the next one
+    instead of waiting. That lets two patrons borrow different copies of the same
+    title concurrently without deadlocks.
+    """
     stmt = (
         select(BookCopy)
         .where(BookCopy.book_id == book_id, BookCopy.status == CopyStatus.AVAILABLE)

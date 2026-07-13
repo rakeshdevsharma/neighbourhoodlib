@@ -41,6 +41,7 @@ button.primary {
   border-radius: 8px; cursor: pointer; font-size: 14px;
 }
 button.primary:hover { background: #1d4ed8; }
+button.primary:disabled { background: #93c5fd; cursor: not-allowed; }
 button.small { font-size: 12px; padding: 5px 10px; }
 
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -56,3 +57,27 @@ th { color: #6b7280; font-weight: 600; font-size: 12px; text-transform: uppercas
 
 .error { color: #991b1b; background: #fee2e2; padding: 8px 12px; border-radius: 8px; margin: 8px 0; }
 .ok-banner { color: #166534; background: #dcfce7; padding: 8px 12px; border-radius: 8px; margin: 8px 0; }
+
+/* Typeahead picker — search input with a visible match list */
+.picker { position: relative; min-width: 220px; }
+.picker-label { font-size: 12px; color: #6b7280; margin-bottom: 4px; display: block; }
+.picker-selected {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border: 1px solid #86efac; border-radius: 8px; background: #f0fdf4; font-size: 14px;
+}
+.picker-selected span { flex: 1; color: #1a1f2b; }
+.picker-results {
+  position: absolute; z-index: 10; top: calc(100% + 4px); left: 0; right: 0;
+  background: #fff; border: 1px solid #d1d5db; border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); max-height: 220px; overflow-y: auto;
+}
+.picker-option {
+  display: block; width: 100%; text-align: left; padding: 10px 12px;
+  border: none; background: #fff; cursor: pointer; font-size: 14px; color: #1a1f2b;
+  border-bottom: 1px solid #f3f4f6;
+}
+.picker-option:last-child { border-bottom: none; }
+.picker-option:hover, .picker-option:focus { background: #eff6ff; outline: none; }
+.picker-option strong { display: block; font-weight: 600; }
+.picker-option small { display: block; color: #6b7280; font-size: 12px; margin-top: 2px; }
+.picker-empty { padding: 10px 12px; font-size: 13px; }

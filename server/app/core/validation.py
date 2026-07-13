@@ -13,12 +13,17 @@ _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def require_non_empty(value: str, field: str) -> str:
+    """Reject blank or whitespace-only strings; return trimmed value.
+
+    Raises ``InvalidArgument`` so the servicer maps it to gRPC INVALID_ARGUMENT.
+    """
     if value is None or value.strip() == "":
         raise InvalidArgument(f"{field} is required")
     return value.strip()
 
 
 def require_valid_email(value: str, field: str = "email") -> str:
+    """Validate a basic email shape (local@domain.tld) after trimming."""
     value = require_non_empty(value, field)
     if not _EMAIL_RE.match(value):
         raise InvalidArgument(f"{field} is not a valid email address")

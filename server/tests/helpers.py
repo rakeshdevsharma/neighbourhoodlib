@@ -24,4 +24,5 @@ def book_with_copies(n: int = 1):
 
 
 def member(email="m@example.com"):
+    """Create a minimal test member through the service layer."""
     return members_svc.create_member(name="Member", email=email, phone=None)

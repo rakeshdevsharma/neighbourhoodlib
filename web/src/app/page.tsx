@@ -5,11 +5,12 @@
  * gRPC-Web (through Envoy). Each tab is a self-contained section with its own
  * forms, list view, and success/error banners.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { client, grpcMessage, pb } from "@/lib/client";
 
 type Tab = "books" | "members" | "loans";
 
+/** Root page: tab switcher that renders one of three admin sections. */
 export default function Home() {
   const [tab, setTab] = useState<Tab>("books");
   return (
@@ -38,6 +39,7 @@ export default function Home() {
 function useBanner() {
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
+  /** Clear both banners, then run an async action (keeps UI from showing stale messages). */
   const show = (fn: () => void) => {
     setError("");
     setOk("");
@@ -46,9 +48,122 @@ function useBanner() {
   return { error, ok, setError, setOk, show };
 }
 
+/** Searchable picker: type to see matches, click one to select. */
+function SearchPicker<T>({
+  label,
+  placeholder,
+  query,
+  onQueryChange,
+  selected,
+  onSelect,
+  options,
+  getKey,
+  formatSelected,
+  renderOption,
+  emptyHint = "No matches",
+}: {
+  label: string;
+  placeholder: string;
+  query: string;
+  onQueryChange: (q: string) => void;
+  selected: T | null;
+  onSelect: (item: T | null) => void;
+  options: T[];
+  getKey: (item: T) => string | number;
+  formatSelected: (item: T) => string;
+  renderOption: (item: T) => ReactNode;
+  emptyHint?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const pick = (item: T) => {
+    onSelect(item);
+    setOpen(false);
+  };
+
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const next = e.relatedTarget as Node | null;
+    if (next && wrapRef.current?.contains(next)) return;
+    setOpen(false);
+  };
+
+  if (selected) {
+    return (
+      <div className="picker">
+        <span className="picker-label">{label}</span>
+        <div className="picker-selected">
+          <span>{formatSelected(selected)}</span>
+          <button
+            type="button"
+            className="small"
+            onClick={() => {
+              onSelect(null);
+              onQueryChange("");
+              setOpen(true);
+            }}
+          >
+            Change
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const trimmed = query.trim();
+  const showResults = open && trimmed.length > 0;
+
+  return (
+    <div className="picker" ref={wrapRef}>
+      <span className="picker-label">{label}</span>
+      <input
+        placeholder={placeholder}
+        value={query}
+        onChange={(e) => {
+          onQueryChange(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={handleBlur}
+        autoComplete="off"
+      />
+      {showResults && (
+        <div
+          className="picker-results"
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          {options.length === 0 ? (
+            <div className="picker-empty muted">{emptyHint}</div>
+          ) : (
+            options.map((item) => (
+              <button
+                key={getKey(item)}
+                type="button"
+                className="picker-option"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  pick(item);
+                }}
+              >
+                {renderOption(item)}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+      {open && trimmed.length === 0 && (
+        <div className="picker-results" onMouseDown={(e) => e.preventDefault()}>
+          <div className="picker-empty muted">Type to search…</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --------------------------------------------------------------------------- //
 // Books — catalog titles, add copies, list availability
 // --------------------------------------------------------------------------- //
+/** Books tab: create titles, add shelf copies, list availability via gRPC-Web. */
 function BooksSection() {
   const [books, setBooks] = useState<pb.Book.AsObject[]>([]);
   const [title, setTitle] = useState("");
@@ -59,6 +174,7 @@ function BooksSection() {
   const [shelf, setShelf] = useState("");
   const b = useBanner();
 
+  /** Fetch all books from the server (page_size=100) and refresh local state. */
   const load = useCallback(async () => {
     try {
       const req = new pb.ListBooksRequest();
@@ -74,6 +190,7 @@ function BooksSection() {
     load();
   }, [load]);
 
+  /** POST CreateBook via grpc-web, then clear the form and reload the table. */
   const createBook = async (e: React.FormEvent) => {
     e.preventDefault();
     b.show(() => {});
@@ -93,6 +210,7 @@ function BooksSection() {
     }
   };
 
+  /** POST AddCopy for the selected book; barcode must be globally unique. */
   const addCopy = async (e: React.FormEvent) => {
     e.preventDefault();
     b.show(() => {});
@@ -208,6 +326,7 @@ function BooksSection() {
 // --------------------------------------------------------------------------- //
 // Members — register patrons and list membership status
 // --------------------------------------------------------------------------- //
+/** Members tab: register patrons and display ACTIVE/SUSPENDED status. */
 function MembersSection() {
   const [members, setMembers] = useState<pb.Member.AsObject[]>([]);
   const [name, setName] = useState("");
@@ -215,6 +334,7 @@ function MembersSection() {
   const [phone, setPhone] = useState("");
   const b = useBanner();
 
+  /** Fetch all members (page_size=100) for the table below. */
   const load = useCallback(async () => {
     try {
       const req = new pb.ListMembersRequest();
@@ -230,6 +350,7 @@ function MembersSection() {
     load();
   }, [load]);
 
+  /** POST CreateMember; email uniqueness is enforced server-side. */
   const createMember = async (e: React.FormEvent) => {
     e.preventDefault();
     b.show(() => {});
@@ -249,6 +370,7 @@ function MembersSection() {
     }
   };
 
+  /** Map protobuf MemberStatus enum to a human-readable label. */
   const statusLabel = (s: number) =>
     s === pb.MemberStatus.MEMBER_STATUS_ACTIVE ? "active" : "suspended";
 
@@ -317,14 +439,42 @@ function MembersSection() {
 // --------------------------------------------------------------------------- //
 // Loans — borrow by member+book, return by loan id, filterable list
 // --------------------------------------------------------------------------- //
+/** Loans tab: borrow/return flows and a filterable loan history table. */
 function LoansSection() {
   const [loans, setLoans] = useState<pb.Loan.AsObject[]>([]);
+  const [members, setMembers] = useState<pb.Member.AsObject[]>([]);
+  const [books, setBooks] = useState<pb.Book.AsObject[]>([]);
   const [filter, setFilter] = useState<number>(pb.LoanStatus.LOAN_STATUS_UNSPECIFIED);
-  const [memberId, setMemberId] = useState("");
-  const [bookId, setBookId] = useState("");
-  const [loanId, setLoanId] = useState("");
+  const [memberPhoneFilter, setMemberPhoneFilter] = useState("");
+  const [bookTitleFilter, setBookTitleFilter] = useState("");
+  const [borrowMember, setBorrowMember] = useState<pb.Member.AsObject | null>(null);
+  const [borrowBook, setBorrowBook] = useState<pb.Book.AsObject | null>(null);
+  const [memberSearch, setMemberSearch] = useState("");
+  const [bookSearch, setBookSearch] = useState("");
+  const [returnableLoans, setReturnableLoans] = useState<pb.Loan.AsObject[]>([]);
+  const [returnLoan, setReturnLoan] = useState<pb.Loan.AsObject | null>(null);
+  const [returnSearch, setReturnSearch] = useState("");
   const b = useBanner();
 
+  /** Load members and books for borrow selects and phone/title loan filters. */
+  const loadLookups = useCallback(async () => {
+    try {
+      const membersReq = new pb.ListMembersRequest();
+      membersReq.setPageSize(100);
+      const booksReq = new pb.ListBooksRequest();
+      booksReq.setPageSize(100);
+      const [membersRes, booksRes] = await Promise.all([
+        client.listMembers(membersReq),
+        client.listBooks(booksReq),
+      ]);
+      setMembers(membersRes.getMembersList().map((x) => x.toObject()));
+      setBooks(booksRes.getBooksList().map((x) => x.toObject()));
+    } catch (e) {
+      b.setError(grpcMessage(e));
+    }
+  }, []); // eslint-disable-line
+
+  /** List loans; re-runs when the status filter dropdown changes. */
   const load = useCallback(async () => {
     try {
       const req = new pb.ListLoansRequest();
@@ -337,47 +487,138 @@ function LoansSection() {
     }
   }, [filter]); // eslint-disable-line
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  /** Open loans (outstanding + overdue) for the return picker. */
+  const loadReturnableLoans = useCallback(async () => {
+    try {
+      const req = new pb.ListLoansRequest();
+      req.setPageSize(100);
+      req.setStatus(pb.LoanStatus.LOAN_STATUS_UNSPECIFIED);
+      const res = await client.listLoans(req);
+      setReturnableLoans(
+        res
+          .getLoansList()
+          .map((x) => x.toObject())
+          .filter((ln) => ln.status !== pb.LoanStatus.LOAN_STATUS_RETURNED),
+      );
+    } catch (e) {
+      b.setError(grpcMessage(e));
+    }
+  }, []); // eslint-disable-line
 
+  useEffect(() => {
+    loadLookups();
+    load();
+    loadReturnableLoans();
+  }, [load, loadLookups, loadReturnableLoans]);
+
+  const memberPhoneById = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const m of members) map.set(m.id, m.phone || "");
+    return map;
+  }, [members]);
+
+  const matchesPhone = (phone: string, query: string) =>
+    !query || phone.toLowerCase().includes(query.toLowerCase());
+
+  const matchesTitle = (title: string, query: string) =>
+    !query || title.toLowerCase().includes(query.toLowerCase());
+
+  const memberMatches = useMemo(() => {
+    const q = memberSearch.trim().toLowerCase();
+    if (!q) return [];
+    return members
+      .filter(
+        (m) =>
+          (m.phone || "").toLowerCase().includes(q) ||
+          m.name.toLowerCase().includes(q),
+      )
+      .slice(0, 10);
+  }, [members, memberSearch]);
+
+  const bookMatches = useMemo(() => {
+    const q = bookSearch.trim().toLowerCase();
+    if (!q) return [];
+    return books
+      .filter(
+        (bk) =>
+          bk.title.toLowerCase().includes(q) ||
+          bk.author.toLowerCase().includes(q),
+      )
+      .slice(0, 10);
+  }, [books, bookSearch]);
+
+  const returnLoanMatches = useMemo(() => {
+    const q = returnSearch.trim().toLowerCase();
+    if (!q) return [];
+    return returnableLoans
+      .filter((ln) => {
+        const phone = memberPhoneById.get(ln.memberId) || "";
+        return (
+          ln.bookTitle.toLowerCase().includes(q) ||
+          ln.memberName.toLowerCase().includes(q) ||
+          phone.toLowerCase().includes(q) ||
+          ln.barcode.toLowerCase().includes(q) ||
+          String(ln.id).includes(q)
+        );
+      })
+      .slice(0, 10);
+  }, [returnableLoans, returnSearch, memberPhoneById]);
+
+  const visibleLoans = loans.filter((ln) => {
+    if (!matchesTitle(ln.bookTitle, bookTitleFilter)) return false;
+    const phone = memberPhoneById.get(ln.memberId) || "";
+    return matchesPhone(phone, memberPhoneFilter);
+  });
+
+  /** Borrow any available copy of a book (server picks copy via SKIP LOCKED). */
   const borrow = async (e: React.FormEvent) => {
     e.preventDefault();
     b.show(() => {});
+    if (!borrowMember || !borrowBook) return;
     try {
       const req = new pb.BorrowBookRequest();
-      req.setMemberId(Number(memberId));
-      req.setBookId(Number(bookId));
+      req.setMemberId(borrowMember.id);
+      req.setBookId(borrowBook.id);
       await client.borrowBook(req);
-      setBookId("");
+      setBorrowBook(null);
+      setBorrowMember(null);
+      setMemberSearch("");
+      setBookSearch("");
       b.setOk("Book borrowed.");
       load();
+      loadReturnableLoans();
     } catch (e) {
       b.setError(grpcMessage(e));
     }
   };
 
+  /** Close a loan by id; server computes any overdue fine. */
   const doReturn = async (e: React.FormEvent) => {
     e.preventDefault();
     b.show(() => {});
+    if (!returnLoan) return;
     try {
       const req = new pb.ReturnBookRequest();
-      req.setLoanId(Number(loanId));
+      req.setLoanId(returnLoan.id);
       await client.returnBook(req);
-      setLoanId("");
+      setReturnLoan(null);
+      setReturnSearch("");
       b.setOk("Book returned.");
       load();
+      loadReturnableLoans();
     } catch (e) {
       b.setError(grpcMessage(e));
     }
   };
 
+  /** Render a colored pill for outstanding / overdue / returned loans. */
   const statusPill = (s: number) => {
     if (s === pb.LoanStatus.LOAN_STATUS_RETURNED) return <span className="pill info">returned</span>;
     if (s === pb.LoanStatus.LOAN_STATUS_OVERDUE) return <span className="pill bad">overdue</span>;
     return <span className="pill warn">outstanding</span>;
   };
 
+  /** Format protobuf Timestamp (seconds since epoch) as a locale date string. */
   const fmt = (ts?: { seconds: number }) =>
     ts ? new Date(ts.seconds * 1000).toLocaleDateString() : "—";
 
@@ -389,26 +630,88 @@ function LoansSection() {
       <div className="card">
         <h2>Borrow a book</h2>
         <form className="row" onSubmit={borrow}>
-          <label>
-            Member ID
-            <input value={memberId} onChange={(e) => setMemberId(e.target.value)} required />
-          </label>
-          <label>
-            Book ID (any available copy)
-            <input value={bookId} onChange={(e) => setBookId(e.target.value)} required />
-          </label>
-          <button className="primary" type="submit">Borrow</button>
+          <SearchPicker
+            label="Member"
+            placeholder="Search by phone or name…"
+            query={memberSearch}
+            onQueryChange={setMemberSearch}
+            selected={borrowMember}
+            onSelect={setBorrowMember}
+            options={memberMatches}
+            getKey={(m) => m.id}
+            formatSelected={(m) => `${m.name}${m.phone ? ` · ${m.phone}` : ""}`}
+            renderOption={(m) => (
+              <>
+                <strong>{m.name}</strong>
+                <small>{m.phone || "No phone"} · {m.email}</small>
+              </>
+            )}
+            emptyHint="No members match"
+          />
+          <SearchPicker
+            label="Book (any available copy)"
+            placeholder="Search by title or author…"
+            query={bookSearch}
+            onQueryChange={setBookSearch}
+            selected={borrowBook}
+            onSelect={setBorrowBook}
+            options={bookMatches}
+            getKey={(bk) => bk.id}
+            formatSelected={(bk) => bk.title}
+            renderOption={(bk) => (
+              <>
+                <strong>{bk.title}</strong>
+                <small>
+                  {bk.author}
+                  {bk.availableCopies > 0
+                    ? ` · ${bk.availableCopies} available`
+                    : " · none available"}
+                </small>
+              </>
+            )}
+            emptyHint="No books match"
+          />
+          <button className="primary" type="submit" disabled={!borrowMember || !borrowBook}>
+            Borrow
+          </button>
         </form>
       </div>
 
       <div className="card">
         <h2>Return a book</h2>
         <form className="row" onSubmit={doReturn}>
-          <label>
-            Loan ID
-            <input value={loanId} onChange={(e) => setLoanId(e.target.value)} required />
-          </label>
-          <button className="primary" type="submit">Return</button>
+          <SearchPicker
+            label="Open loan"
+            placeholder="Search by book, borrower, phone, barcode…"
+            query={returnSearch}
+            onQueryChange={setReturnSearch}
+            selected={returnLoan}
+            onSelect={setReturnLoan}
+            options={returnLoanMatches}
+            getKey={(ln) => ln.id}
+            formatSelected={(ln) => `${ln.bookTitle} — ${ln.memberName}`}
+            renderOption={(ln) => {
+              const phone = memberPhoneById.get(ln.memberId) || "";
+              return (
+                <>
+                  <strong>{ln.bookTitle}</strong>
+                  <small>
+                    {ln.memberName}
+                    {phone ? ` · ${phone}` : ""}
+                    {" · "}
+                    {ln.barcode}
+                    {" · due "}
+                    {fmt(ln.dueAt)}
+                    {ln.status === pb.LoanStatus.LOAN_STATUS_OVERDUE ? " · overdue" : ""}
+                  </small>
+                </>
+              );
+            }}
+            emptyHint="No open loans match"
+          />
+          <button className="primary" type="submit" disabled={!returnLoan}>
+            Return
+          </button>
         </form>
       </div>
 
@@ -416,13 +719,29 @@ function LoansSection() {
         <h2>Loans</h2>
         <div className="row" style={{ marginBottom: 12 }}>
           <label>
-            Filter
+            Status
             <select value={filter} onChange={(e) => setFilter(Number(e.target.value))}>
               <option value={pb.LoanStatus.LOAN_STATUS_UNSPECIFIED}>All</option>
               <option value={pb.LoanStatus.LOAN_STATUS_OUTSTANDING}>Outstanding</option>
               <option value={pb.LoanStatus.LOAN_STATUS_OVERDUE}>Overdue</option>
               <option value={pb.LoanStatus.LOAN_STATUS_RETURNED}>Returned</option>
             </select>
+          </label>
+          <label>
+            Member
+            <input
+              placeholder="Phone…"
+              value={memberPhoneFilter}
+              onChange={(e) => setMemberPhoneFilter(e.target.value)}
+            />
+          </label>
+          <label>
+            Book
+            <input
+              placeholder="Title…"
+              value={bookTitleFilter}
+              onChange={(e) => setBookTitleFilter(e.target.value)}
+            />
           </label>
         </div>
         <table>
@@ -440,7 +759,7 @@ function LoansSection() {
             </tr>
           </thead>
           <tbody>
-            {loans.map((ln) => (
+            {visibleLoans.map((ln) => (
               <tr key={ln.id}>
                 <td>{ln.id}</td>
                 <td>{ln.bookTitle}</td>
@@ -453,9 +772,11 @@ function LoansSection() {
                 <td>{statusPill(ln.status)}</td>
               </tr>
             ))}
-            {loans.length === 0 && (
+            {visibleLoans.length === 0 && (
               <tr>
-                <td colSpan={9} className="muted">No loans.</td>
+                <td colSpan={9} className="muted">
+                  {loans.length === 0 ? "No loans." : "No loans match the filters."}
+                </td>
               </tr>
             )}
           </tbody>
