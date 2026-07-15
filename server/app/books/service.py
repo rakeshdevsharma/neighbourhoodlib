@@ -102,13 +102,10 @@ def list_books(*, query: Optional[str], limit: int, offset: int) -> list[tuple[B
         List of ``(Book, total_copies, available_copies)`` tuples.
     """
     with unit_of_work() as s:
-        books = repo.list_books(s, query=query, limit=limit, offset=offset)
-        result = []
-        for b in books:
-            total, available = repo.copy_counts(s, b.id)
+        rows = repo.list_books(s, query=query, limit=limit, offset=offset)
+        for b, _, _ in rows:
             s.expunge(b)
-            result.append((b, total, available))
-        return result
+        return list(rows)
 
 
 def add_copy(

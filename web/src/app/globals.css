@@ -42,7 +42,11 @@ button.primary {
 }
 button.primary:hover { background: #1d4ed8; }
 button.primary:disabled { background: #93c5fd; cursor: not-allowed; }
-button.small { font-size: 12px; padding: 5px 10px; }
+button.small {
+  font-size: 12px; padding: 5px 10px;
+  border: 1px solid #d1d5db; border-radius: 8px; background: #fff; cursor: pointer;
+}
+button.small:hover { background: #f9fafb; }
 
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eee; }

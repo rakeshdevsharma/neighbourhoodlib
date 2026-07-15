@@ -30,3 +30,12 @@ def test_book_counts_reflect_copies():
     book = book_with_copies(3)
     _, total, available = books_svc.get_book_with_counts(book.id)
     assert (total, available) == (3, 3)
+
+
+def test_list_books_returns_counts_in_one_query():
+    book = book_with_copies(2)
+    empty = books_svc.create_book(title="Empty Shelf", author="Author", isbn=None)
+    rows = books_svc.list_books(query=None, limit=100, offset=0)
+    by_id = {b.id: (total, available) for b, total, available in rows}
+    assert by_id[book.id] == (2, 2)
+    assert by_id[empty.id] == (0, 0)
