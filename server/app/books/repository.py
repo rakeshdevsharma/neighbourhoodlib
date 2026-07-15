@@ -33,19 +33,39 @@ def get_book(session: Session, book_id: int) -> Optional[Book]:
 
 def list_books(
     session: Session, *, query: Optional[str], limit: int, offset: int
-) -> Sequence[Book]:
-    """SELECT books with optional search and pagination.
+) -> Sequence[tuple[Book, int, int]]:
+    """SELECT books with copy counts in one query.
 
-    Builds a SQLAlchemy ``select()`` statement dynamically. ``ilike`` is Postgres
-    case-insensitive pattern match; ``%query%`` matches substrings. Results are
-    ordered by id for stable pagination.
+    A grouped subquery aggregates total and available copies per ``book_id``;
+    ``OUTER JOIN`` keeps books with zero copies (``coalesce`` → 0). Optional
+    ``ilike`` filter matches title/author substrings. Results ordered by id
+    for stable pagination.
     """
-    stmt = select(Book)
+    counts_sq = (
+        select(
+            BookCopy.book_id,
+            func.count().label("total"),
+            func.count()
+            .filter(BookCopy.status == CopyStatus.AVAILABLE)
+            .label("available"),
+        )
+        .group_by(BookCopy.book_id)
+        .subquery()
+    )
+    stmt = (
+        select(
+            Book,
+            func.coalesce(counts_sq.c.total, 0),
+            func.coalesce(counts_sq.c.available, 0),
+        )
+        .outerjoin(counts_sq, Book.id == counts_sq.c.book_id)
+    )
     if query:
         like = f"%{query}%"
         stmt = stmt.where(or_(Book.title.ilike(like), Book.author.ilike(like)))
     stmt = stmt.order_by(Book.id).limit(limit).offset(offset)
-    return session.scalars(stmt).all()
+    rows = session.execute(stmt).all()
+    return [(book, int(total), int(available)) for book, total, available in rows]
 
 
 def copy_counts(session: Session, book_id: int) -> tuple[int, int]:

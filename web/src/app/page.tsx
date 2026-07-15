@@ -169,13 +169,20 @@ function BooksSection() {
   const [title, setTitle] = useState("");
   const [author, setAuthor] = useState("");
   const [isbn, setIsbn] = useState("");
+  const [editingBook, setEditingBook] = useState<pb.Book.AsObject | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editAuthor, setEditAuthor] = useState("");
+  const [editIsbn, setEditIsbn] = useState("");
   const [copyBookId, setCopyBookId] = useState<number | null>(null);
   const [barcode, setBarcode] = useState("");
   const [shelf, setShelf] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
   const b = useBanner();
 
   /** Fetch all books from the server (page_size=100) and refresh local state. */
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const req = new pb.ListBooksRequest();
       req.setPageSize(100);
@@ -183,6 +190,8 @@ function BooksSection() {
       setBooks(res.getBooksList().map((x) => x.toObject()));
     } catch (e) {
       b.setError(grpcMessage(e));
+    } finally {
+      setLoading(false);
     }
   }, []); // eslint-disable-line
 
@@ -194,11 +203,18 @@ function BooksSection() {
   const createBook = async (e: React.FormEvent) => {
     e.preventDefault();
     b.show(() => {});
+    const t = title.trim();
+    const a = author.trim();
+    if (!t || !a) {
+      b.setError("Title and author are required.");
+      return;
+    }
+    setSubmitting(true);
     try {
       const req = new pb.CreateBookRequest();
-      req.setTitle(title);
-      req.setAuthor(author);
-      req.setIsbn(isbn);
+      req.setTitle(t);
+      req.setAuthor(a);
+      req.setIsbn(isbn.trim());
       await client.createBook(req);
       setTitle("");
       setAuthor("");
@@ -207,6 +223,52 @@ function BooksSection() {
       load();
     } catch (e) {
       b.setError(grpcMessage(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const startEditBook = (bk: pb.Book.AsObject) => {
+    b.show(() => {});
+    setEditingBook(bk);
+    setEditTitle(bk.title);
+    setEditAuthor(bk.author);
+    setEditIsbn(bk.isbn);
+  };
+
+  const cancelEditBook = () => {
+    setEditingBook(null);
+    setEditTitle("");
+    setEditAuthor("");
+    setEditIsbn("");
+  };
+
+  /** POST UpdateBook for the selected catalog row. */
+  const updateBook = async (e: React.FormEvent) => {
+    e.preventDefault();
+    b.show(() => {});
+    if (!editingBook) return;
+    const t = editTitle.trim();
+    const a = editAuthor.trim();
+    if (!t || !a) {
+      b.setError("Title and author are required.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const req = new pb.UpdateBookRequest();
+      req.setId(editingBook.id);
+      req.setTitle(t);
+      req.setAuthor(a);
+      req.setIsbn(editIsbn.trim());
+      await client.updateBook(req);
+      cancelEditBook();
+      b.setOk("Book updated.");
+      load();
+    } catch (e) {
+      b.setError(grpcMessage(e));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -215,12 +277,18 @@ function BooksSection() {
     e.preventDefault();
     b.show(() => {});
     if (!copyBookId) return;
+    const code = barcode.trim();
+    if (!code) {
+      b.setError("Barcode is required.");
+      return;
+    }
+    setSubmitting(true);
     try {
       const req = new pb.AddCopyRequest();
       req.setBookId(copyBookId);
-      req.setBarcode(barcode);
+      req.setBarcode(code);
       req.setCondition(pb.CopyCondition.COPY_CONDITION_GOOD);
-      req.setShelfLocation(shelf);
+      req.setShelfLocation(shelf.trim());
       await client.addCopy(req);
       setBarcode("");
       setShelf("");
@@ -228,8 +296,19 @@ function BooksSection() {
       load();
     } catch (e) {
       b.setError(grpcMessage(e));
+    } finally {
+      setSubmitting(false);
     }
   };
+
+  /** True once any edit field differs from the book being edited (whitespace-insensitive). */
+  const bookDirty =
+    !!editingBook &&
+    (editTitle.trim() !== editingBook.title ||
+      editAuthor.trim() !== editingBook.author ||
+      editIsbn.trim() !== editingBook.isbn);
+  /** Edit form has the required fields filled (ignoring whitespace). */
+  const bookEditValid = !!editTitle.trim() && !!editAuthor.trim();
 
   return (
     <div>
@@ -251,9 +330,43 @@ function BooksSection() {
             ISBN (optional)
             <input value={isbn} onChange={(e) => setIsbn(e.target.value)} />
           </label>
-          <button className="primary" type="submit">Create</button>
+          <button
+            className="primary"
+            type="submit"
+            disabled={submitting || !title.trim() || !author.trim()}
+          >
+            Create
+          </button>
         </form>
       </div>
+
+      {editingBook && (
+        <div className="card">
+          <h2>Edit book #{editingBook.id}</h2>
+          <form className="row" onSubmit={updateBook}>
+            <label>
+              Title
+              <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} required />
+            </label>
+            <label>
+              Author
+              <input value={editAuthor} onChange={(e) => setEditAuthor(e.target.value)} required />
+            </label>
+            <label>
+              ISBN (optional)
+              <input value={editIsbn} onChange={(e) => setEditIsbn(e.target.value)} />
+            </label>
+            <button
+              className="primary"
+              type="submit"
+              disabled={submitting || !bookDirty || !bookEditValid}
+            >
+              Save
+            </button>
+            <button type="button" className="small" onClick={cancelEditBook}>Cancel</button>
+          </form>
+        </div>
+      )}
 
       <div className="card">
         <h2>Add a copy</h2>
@@ -281,12 +394,18 @@ function BooksSection() {
             Shelf
             <input value={shelf} onChange={(e) => setShelf(e.target.value)} />
           </label>
-          <button className="primary" type="submit">Add copy</button>
+          <button
+            className="primary"
+            type="submit"
+            disabled={submitting || !copyBookId || !barcode.trim()}
+          >
+            Add copy
+          </button>
         </form>
       </div>
 
       <div className="card">
-        <h2>Books</h2>
+        <h2>Books {loading && <span className="muted">· loading…</span>}</h2>
         <table>
           <thead>
             <tr>
@@ -295,6 +414,7 @@ function BooksSection() {
               <th>Author</th>
               <th>ISBN</th>
               <th>Available / Total</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -309,13 +429,22 @@ function BooksSection() {
                     {bk.availableCopies} / {bk.totalCopies}
                   </span>
                 </td>
+                <td>
+                  <button type="button" className="small" onClick={() => startEditBook(bk)}>
+                    Edit
+                  </button>
+                </td>
               </tr>
             ))}
-            {books.length === 0 && (
+            {loading && books.length === 0 ? (
               <tr>
-                <td colSpan={5} className="muted">No books yet.</td>
+                <td colSpan={6} className="muted">Loading books…</td>
               </tr>
-            )}
+            ) : !loading && books.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="muted">No books yet.</td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>
@@ -332,10 +461,18 @@ function MembersSection() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [editingMember, setEditingMember] = useState<pb.Member.AsObject | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editStatus, setEditStatus] = useState<number>(pb.MemberStatus.MEMBER_STATUS_ACTIVE);
+  const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
   const b = useBanner();
 
   /** Fetch all members (page_size=100) for the table below. */
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const req = new pb.ListMembersRequest();
       req.setPageSize(100);
@@ -343,6 +480,8 @@ function MembersSection() {
       setMembers(res.getMembersList().map((x) => x.toObject()));
     } catch (e) {
       b.setError(grpcMessage(e));
+    } finally {
+      setLoading(false);
     }
   }, []); // eslint-disable-line
 
@@ -350,15 +489,69 @@ function MembersSection() {
     load();
   }, [load]);
 
+  const startEditMember = (m: pb.Member.AsObject) => {
+    b.show(() => {});
+    setEditingMember(m);
+    setEditName(m.name);
+    setEditEmail(m.email);
+    setEditPhone(m.phone);
+    setEditStatus(m.status);
+  };
+
+  const cancelEditMember = () => {
+    setEditingMember(null);
+    setEditName("");
+    setEditEmail("");
+    setEditPhone("");
+    setEditStatus(pb.MemberStatus.MEMBER_STATUS_ACTIVE);
+  };
+
+  /** POST UpdateMember; email uniqueness and status changes are enforced server-side. */
+  const updateMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    b.show(() => {});
+    if (!editingMember) return;
+    const n = editName.trim();
+    const em = editEmail.trim();
+    if (!n || !em) {
+      b.setError("Name and email are required.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const req = new pb.UpdateMemberRequest();
+      req.setId(editingMember.id);
+      req.setName(n);
+      req.setEmail(em);
+      req.setPhone(editPhone.trim());
+      req.setStatus(editStatus);
+      await client.updateMember(req);
+      cancelEditMember();
+      b.setOk("Member updated.");
+      load();
+    } catch (e) {
+      b.setError(grpcMessage(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   /** POST CreateMember; email uniqueness is enforced server-side. */
   const createMember = async (e: React.FormEvent) => {
     e.preventDefault();
     b.show(() => {});
+    const n = name.trim();
+    const em = email.trim();
+    if (!n || !em) {
+      b.setError("Name and email are required.");
+      return;
+    }
+    setSubmitting(true);
     try {
       const req = new pb.CreateMemberRequest();
-      req.setName(name);
-      req.setEmail(email);
-      req.setPhone(phone);
+      req.setName(n);
+      req.setEmail(em);
+      req.setPhone(phone.trim());
       await client.createMember(req);
       setName("");
       setEmail("");
@@ -367,12 +560,24 @@ function MembersSection() {
       load();
     } catch (e) {
       b.setError(grpcMessage(e));
+    } finally {
+      setSubmitting(false);
     }
   };
 
   /** Map protobuf MemberStatus enum to a human-readable label. */
   const statusLabel = (s: number) =>
     s === pb.MemberStatus.MEMBER_STATUS_ACTIVE ? "active" : "suspended";
+
+  /** True once any edit field differs from the member being edited (whitespace-insensitive for text). */
+  const memberDirty =
+    !!editingMember &&
+    (editName.trim() !== editingMember.name ||
+      editEmail.trim() !== editingMember.email ||
+      editPhone.trim() !== editingMember.phone ||
+      editStatus !== editingMember.status);
+  /** Edit form has the required fields filled (ignoring whitespace). */
+  const memberEditValid = !!editName.trim() && !!editEmail.trim();
 
   return (
     <div>
@@ -394,12 +599,56 @@ function MembersSection() {
             Phone
             <input value={phone} onChange={(e) => setPhone(e.target.value)} />
           </label>
-          <button className="primary" type="submit">Create</button>
+          <button
+            className="primary"
+            type="submit"
+            disabled={submitting || !name.trim() || !email.trim()}
+          >
+            Create
+          </button>
         </form>
       </div>
 
+      {editingMember && (
+        <div className="card">
+          <h2>Edit member #{editingMember.id}</h2>
+          <form className="row" onSubmit={updateMember}>
+            <label>
+              Name
+              <input value={editName} onChange={(e) => setEditName(e.target.value)} required />
+            </label>
+            <label>
+              Email
+              <input value={editEmail} onChange={(e) => setEditEmail(e.target.value)} required />
+            </label>
+            <label>
+              Phone
+              <input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} />
+            </label>
+            <label>
+              Status
+              <select
+                value={editStatus}
+                onChange={(e) => setEditStatus(Number(e.target.value))}
+              >
+                <option value={pb.MemberStatus.MEMBER_STATUS_ACTIVE}>Active</option>
+                <option value={pb.MemberStatus.MEMBER_STATUS_SUSPENDED}>Suspended</option>
+              </select>
+            </label>
+            <button
+              className="primary"
+              type="submit"
+              disabled={submitting || !memberDirty || !memberEditValid}
+            >
+              Save
+            </button>
+            <button type="button" className="small" onClick={cancelEditMember}>Cancel</button>
+          </form>
+        </div>
+      )}
+
       <div className="card">
-        <h2>Members</h2>
+        <h2>Members {loading && <span className="muted">· loading…</span>}</h2>
         <table>
           <thead>
             <tr>
@@ -408,6 +657,7 @@ function MembersSection() {
               <th>Email</th>
               <th>Phone</th>
               <th>Status</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -422,13 +672,22 @@ function MembersSection() {
                     {statusLabel(m.status)}
                   </span>
                 </td>
+                <td>
+                  <button type="button" className="small" onClick={() => startEditMember(m)}>
+                    Edit
+                  </button>
+                </td>
               </tr>
             ))}
-            {members.length === 0 && (
+            {loading && members.length === 0 ? (
               <tr>
-                <td colSpan={5} className="muted">No members yet.</td>
+                <td colSpan={6} className="muted">Loading members…</td>
               </tr>
-            )}
+            ) : !loading && members.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="muted">No members yet.</td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>
@@ -454,6 +713,8 @@ function LoansSection() {
   const [returnableLoans, setReturnableLoans] = useState<pb.Loan.AsObject[]>([]);
   const [returnLoan, setReturnLoan] = useState<pb.Loan.AsObject | null>(null);
   const [returnSearch, setReturnSearch] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
   const b = useBanner();
 
   /** Load members and books for borrow selects and phone/title loan filters. */
@@ -476,6 +737,7 @@ function LoansSection() {
 
   /** List loans; re-runs when the status filter dropdown changes. */
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const req = new pb.ListLoansRequest();
       req.setPageSize(100);
@@ -484,6 +746,8 @@ function LoansSection() {
       setLoans(res.getLoansList().map((x) => x.toObject()));
     } catch (e) {
       b.setError(grpcMessage(e));
+    } finally {
+      setLoading(false);
     }
   }, [filter]); // eslint-disable-line
 
@@ -575,6 +839,7 @@ function LoansSection() {
     e.preventDefault();
     b.show(() => {});
     if (!borrowMember || !borrowBook) return;
+    setSubmitting(true);
     try {
       const req = new pb.BorrowBookRequest();
       req.setMemberId(borrowMember.id);
@@ -589,6 +854,8 @@ function LoansSection() {
       loadReturnableLoans();
     } catch (e) {
       b.setError(grpcMessage(e));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -597,6 +864,7 @@ function LoansSection() {
     e.preventDefault();
     b.show(() => {});
     if (!returnLoan) return;
+    setSubmitting(true);
     try {
       const req = new pb.ReturnBookRequest();
       req.setLoanId(returnLoan.id);
@@ -608,6 +876,8 @@ function LoansSection() {
       loadReturnableLoans();
     } catch (e) {
       b.setError(grpcMessage(e));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -671,7 +941,11 @@ function LoansSection() {
             )}
             emptyHint="No books match"
           />
-          <button className="primary" type="submit" disabled={!borrowMember || !borrowBook}>
+          <button
+            className="primary"
+            type="submit"
+            disabled={submitting || !borrowMember || !borrowBook}
+          >
             Borrow
           </button>
         </form>
@@ -709,14 +983,18 @@ function LoansSection() {
             }}
             emptyHint="No open loans match"
           />
-          <button className="primary" type="submit" disabled={!returnLoan}>
+          <button
+            className="primary"
+            type="submit"
+            disabled={submitting || !returnLoan}
+          >
             Return
           </button>
         </form>
       </div>
 
       <div className="card">
-        <h2>Loans</h2>
+        <h2>Loans {loading && <span className="muted">· loading…</span>}</h2>
         <div className="row" style={{ marginBottom: 12 }}>
           <label>
             Status
@@ -772,13 +1050,17 @@ function LoansSection() {
                 <td>{statusPill(ln.status)}</td>
               </tr>
             ))}
-            {visibleLoans.length === 0 && (
+            {loading && loans.length === 0 ? (
+              <tr>
+                <td colSpan={9} className="muted">Loading loans…</td>
+              </tr>
+            ) : visibleLoans.length === 0 ? (
               <tr>
                 <td colSpan={9} className="muted">
                   {loans.length === 0 ? "No loans." : "No loans match the filters."}
                 </td>
               </tr>
-            )}
+            ) : null}
           </tbody>
         </table>
       </div>
