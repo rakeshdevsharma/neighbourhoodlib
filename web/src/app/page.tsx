@@ -177,10 +177,12 @@ function BooksSection() {
   const [barcode, setBarcode] = useState("");
   const [shelf, setShelf] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
   const b = useBanner();
 
   /** Fetch all books from the server (page_size=100) and refresh local state. */
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const req = new pb.ListBooksRequest();
       req.setPageSize(100);
@@ -188,6 +190,8 @@ function BooksSection() {
       setBooks(res.getBooksList().map((x) => x.toObject()));
     } catch (e) {
       b.setError(grpcMessage(e));
+    } finally {
+      setLoading(false);
     }
   }, []); // eslint-disable-line
 
@@ -401,7 +405,7 @@ function BooksSection() {
       </div>
 
       <div className="card">
-        <h2>Books</h2>
+        <h2>Books {loading && <span className="muted">· loading…</span>}</h2>
         <table>
           <thead>
             <tr>
@@ -432,11 +436,15 @@ function BooksSection() {
                 </td>
               </tr>
             ))}
-            {books.length === 0 && (
+            {loading && books.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="muted">Loading books…</td>
+              </tr>
+            ) : !loading && books.length === 0 ? (
               <tr>
                 <td colSpan={6} className="muted">No books yet.</td>
               </tr>
-            )}
+            ) : null}
           </tbody>
         </table>
       </div>
@@ -459,10 +467,12 @@ function MembersSection() {
   const [editPhone, setEditPhone] = useState("");
   const [editStatus, setEditStatus] = useState<number>(pb.MemberStatus.MEMBER_STATUS_ACTIVE);
   const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
   const b = useBanner();
 
   /** Fetch all members (page_size=100) for the table below. */
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const req = new pb.ListMembersRequest();
       req.setPageSize(100);
@@ -470,6 +480,8 @@ function MembersSection() {
       setMembers(res.getMembersList().map((x) => x.toObject()));
     } catch (e) {
       b.setError(grpcMessage(e));
+    } finally {
+      setLoading(false);
     }
   }, []); // eslint-disable-line
 
@@ -636,7 +648,7 @@ function MembersSection() {
       )}
 
       <div className="card">
-        <h2>Members</h2>
+        <h2>Members {loading && <span className="muted">· loading…</span>}</h2>
         <table>
           <thead>
             <tr>
@@ -667,11 +679,15 @@ function MembersSection() {
                 </td>
               </tr>
             ))}
-            {members.length === 0 && (
+            {loading && members.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="muted">Loading members…</td>
+              </tr>
+            ) : !loading && members.length === 0 ? (
               <tr>
                 <td colSpan={6} className="muted">No members yet.</td>
               </tr>
-            )}
+            ) : null}
           </tbody>
         </table>
       </div>
@@ -698,6 +714,7 @@ function LoansSection() {
   const [returnLoan, setReturnLoan] = useState<pb.Loan.AsObject | null>(null);
   const [returnSearch, setReturnSearch] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
   const b = useBanner();
 
   /** Load members and books for borrow selects and phone/title loan filters. */
@@ -720,6 +737,7 @@ function LoansSection() {
 
   /** List loans; re-runs when the status filter dropdown changes. */
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const req = new pb.ListLoansRequest();
       req.setPageSize(100);
@@ -728,6 +746,8 @@ function LoansSection() {
       setLoans(res.getLoansList().map((x) => x.toObject()));
     } catch (e) {
       b.setError(grpcMessage(e));
+    } finally {
+      setLoading(false);
     }
   }, [filter]); // eslint-disable-line
 
@@ -974,7 +994,7 @@ function LoansSection() {
       </div>
 
       <div className="card">
-        <h2>Loans</h2>
+        <h2>Loans {loading && <span className="muted">· loading…</span>}</h2>
         <div className="row" style={{ marginBottom: 12 }}>
           <label>
             Status
@@ -1030,13 +1050,17 @@ function LoansSection() {
                 <td>{statusPill(ln.status)}</td>
               </tr>
             ))}
-            {visibleLoans.length === 0 && (
+            {loading && loans.length === 0 ? (
+              <tr>
+                <td colSpan={9} className="muted">Loading loans…</td>
+              </tr>
+            ) : visibleLoans.length === 0 ? (
               <tr>
                 <td colSpan={9} className="muted">
                   {loans.length === 0 ? "No loans." : "No loans match the filters."}
                 </td>
               </tr>
-            )}
+            ) : null}
           </tbody>
         </table>
       </div>
